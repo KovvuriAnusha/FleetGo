@@ -62,6 +62,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\FleetGo.Shared\FleetGo.Shared.csproj" />
+    <ProjectReference Include="..\FleetGo.Mobile.Core\FleetGo.Mobile.Core.csproj" />
   </ItemGroup>
 
 </Project>
+

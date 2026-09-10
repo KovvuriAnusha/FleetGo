@@ -3,9 +3,8 @@
   <!--
     FleetGo.API - the ASP.NET Core Web API host.
 
-    Phase 1 keeps this deliberately thin: OpenAPI, health checks, ProblemDetails
-    and one system endpoint. Persistence, authentication and the domain modules
-    arrive in later phases.
+    Phase 2 adds EF Core + SQL Server, JWT/refresh-token authentication and the
+    Auth endpoints. Domain modules (routes, stops, ...) still arrive in later phases.
   -->
 
   <PropertyGroup>
@@ -23,6 +22,34 @@
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
     <!-- Interactive API reference UI rendered from that OpenAPI document. -->
     <PackageReference Include="Scalar.AspNetCore" Version="2.17.3" />
+
+    <!--
+      JWT bearer authentication. Unlike some other authentication handlers (Cookies,
+      Negotiate), Microsoft.AspNetCore.Authentication.JwtBearer is NOT part of the
+      Microsoft.AspNetCore.App shared framework - confirmed by a real build failure
+      (CS0234, namespace not found) when it was assumed to be. It ships as its own
+      package because it pulls in the Microsoft.IdentityModel.* token-handling stack,
+      which the shared framework does not carry.
+    -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
+
+    <!-- EF Core is never part of the shared framework - always an explicit package. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.12" />
+    <!-- Design-time only: powers `dotnet ef migrations add` / `dotnet ef database update`. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <!-- AddDbContextCheck: reports "ready" as false when SQL Server cannot be reached. -->
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.12" />
+
+    <!--
+      PasswordHasher<TUser>/IPasswordHasher<TUser> only - not the full ASP.NET Core
+      Identity system (UserManager, IdentityUser, EF stores). Referenced explicitly for
+      a pinned, visible version rather than relying on whatever the shared framework
+      happens to carry.
+    -->
+    <PackageReference Include="Microsoft.Extensions.Identity.Core" Version="10.0.12" />
   </ItemGroup>
 
   <ItemGroup>
@@ -35,3 +62,4 @@
   </ItemGroup>
 
 </Project>
+

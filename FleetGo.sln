@@ -27,6 +27,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FleetGo.API.Tests", "tests\
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FleetGo.Mobile.Tests", "tests\FleetGo.Mobile.Tests\FleetGo.Mobile.Tests.csproj", "{47C7AD06-4A2E-4FAF-917D-B5353924D8D8}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FleetGo.Mobile.Core", "src\FleetGo.Mobile.Core\FleetGo.Mobile.Core.csproj", "{FC95084E-D749-457E-A7AD-6FC253111C30}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -53,6 +55,10 @@ Global
 		{47C7AD06-4A2E-4FAF-917D-B5353924D8D8}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{47C7AD06-4A2E-4FAF-917D-B5353924D8D8}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{47C7AD06-4A2E-4FAF-917D-B5353924D8D8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FC95084E-D749-457E-A7AD-6FC253111C30}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FC95084E-D749-457E-A7AD-6FC253111C30}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FC95084E-D749-457E-A7AD-6FC253111C30}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FC95084E-D749-457E-A7AD-6FC253111C30}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -63,8 +69,10 @@ Global
 		{11974C16-A6D4-49BE-92DB-3B3983644B51} = {C89CD333-56B4-46CF-964E-FF5A2A0416EF}
 		{F6C9A04F-46D5-40CE-AD19-D071F9EEA3B4} = {47DB2FD7-7659-4967-8CDF-CED305591DE8}
 		{47C7AD06-4A2E-4FAF-917D-B5353924D8D8} = {47DB2FD7-7659-4967-8CDF-CED305591DE8}
+		{FC95084E-D749-457E-A7AD-6FC253111C30} = {C89CD333-56B4-46CF-964E-FF5A2A0416EF}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {F24163D1-43FF-4C1F-8365-91E9C897275E}
 	EndGlobalSection
 EndGlobal
+

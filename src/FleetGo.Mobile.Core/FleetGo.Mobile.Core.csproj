@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    FleetGo.Mobile.Core - view models and app services that do not need a MAUI head to
+    run.
+
+    docs/architecture.md flagged this project as the plan for "the point the logic
+    justifies it" (see "Known gap: view model tests"). Phase 2's LoginViewModel is the
+    first view model with real behaviour worth testing directly - validation, calling the
+    authentication service, mapping failures to messages - so it lives here rather than in
+    FleetGo.Mobile, which only targets platform heads (net10.0-android and friends) that a
+    plain net10.0 test project cannot reference.
+
+    Deliberately plain net10.0 with no UseMaui/platform dependency - not even
+    Microsoft.Maui.Controls - so it restores and builds anywhere the SDK is installed, the
+    same as FleetGo.Shared. Anything that genuinely needs a platform API (SecureStorage,
+    Shell navigation) is reached through an interface defined here and implemented in
+    FleetGo.Mobile, which is the one project that actually has a platform to run on.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>FleetGo.Mobile.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- MVVM source generators: ObservableObject, [ObservableProperty], [RelayCommand]. -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FleetGo.Shared\FleetGo.Shared.csproj" />
+  </ItemGroup>
+
+</Project>
+

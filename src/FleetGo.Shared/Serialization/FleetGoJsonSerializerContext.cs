@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using FleetGo.Shared.Contracts;
+using FleetGo.Shared.Contracts.Auth;
 
 namespace FleetGo.Shared.Serialization;
 
@@ -20,4 +21,10 @@ namespace FleetGo.Shared.Serialization;
 [JsonSerializable(typeof(ApiInfoResponse))]
 [JsonSerializable(typeof(HealthReportResponse))]
 [JsonSerializable(typeof(HealthCheckEntryResponse))]
+[JsonSerializable(typeof(LoginRequest))]
+[JsonSerializable(typeof(TokenResponse))]
+[JsonSerializable(typeof(RefreshTokenRequest))]
+[JsonSerializable(typeof(LogoutRequest))]
+[JsonSerializable(typeof(CurrentUserResponse))]
 public sealed partial class FleetGoJsonSerializerContext : JsonSerializerContext;
+

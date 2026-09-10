@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FleetGo.Mobile.Configuration;
+using FleetGo.Mobile.Core.Session;
 using FleetGo.Shared.Contracts;
 using FleetGo.Shared.Http;
 using Microsoft.Extensions.Logging;
@@ -25,18 +26,21 @@ public sealed partial class HomeViewModel : ObservableObject
 
     private readonly IFleetGoApiClient _apiClient;
     private readonly IConnectivity _connectivity;
+    private readonly IAuthenticationService _authenticationService;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<HomeViewModel> _logger;
 
     public HomeViewModel(
         IFleetGoApiClient apiClient,
         IConnectivity connectivity,
+        IAuthenticationService authenticationService,
         ApiSettings apiSettings,
         TimeProvider timeProvider,
         ILogger<HomeViewModel> logger)
     {
         _apiClient = apiClient;
         _connectivity = connectivity;
+        _authenticationService = authenticationService;
         _timeProvider = timeProvider;
         _logger = logger;
 
@@ -45,7 +49,17 @@ public sealed partial class HomeViewModel : ObservableObject
         ApiVersion = Unknown;
         ApiEnvironment = Unknown;
         LastCheckedText = "Never";
+
+        // HomeViewModel is registered as a singleton and constructed once at app start,
+        // before sign-in happens - subscribing here (rather than re-reading CurrentUser on
+        // every page appearance) means the "Signed in as..." line updates itself the
+        // moment login, session restore, or sign-out changes it.
+        _authenticationService.AuthenticationStateChanged += OnAuthenticationStateChanged;
+        SignedInAsText = BuildSignedInAsText();
     }
+
+    /// <summary>Raised after a successful sign-out. The page handles navigation back to the login screen.</summary>
+    public event EventHandler? SignedOut;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsNotBusy))]
@@ -69,6 +83,9 @@ public sealed partial class HomeViewModel : ObservableObject
 
     [ObservableProperty]
     public partial string LastCheckedText { get; set; }
+
+    [ObservableProperty]
+    public partial string SignedInAsText { get; set; }
 
     public bool IsNotBusy => !IsBusy;
 
@@ -137,6 +154,13 @@ public sealed partial class HomeViewModel : ObservableObject
         }
     }
 
+    [RelayCommand]
+    private async Task SignOutAsync()
+    {
+        await _authenticationService.LogoutAsync();
+        SignedOut?.Invoke(this, EventArgs.Empty);
+    }
+
     private void SetFailure(string message)
     {
         IsApiReachable = false;
@@ -144,4 +168,10 @@ public sealed partial class HomeViewModel : ObservableObject
         ApiEnvironment = Unknown;
         StatusMessage = message;
     }
+
+    private void OnAuthenticationStateChanged(object? sender, EventArgs e) => SignedInAsText = BuildSignedInAsText();
+
+    private string BuildSignedInAsText() =>
+        _authenticationService.CurrentUser is { } user ? $"Signed in as {user.Email}" : "Signed in";
 }
+

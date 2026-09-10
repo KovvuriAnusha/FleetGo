@@ -13,7 +13,7 @@ env:
 
 jobs:
   build-and-test:
-    name: Build and test (API, Shared)
+    name: Build and test (API, Shared, Mobile.Core)
     runs-on: ubuntu-latest
 
     steps:
@@ -28,7 +28,10 @@ jobs:
       # The .NET MAUI heads are built on developer machines and on a macOS runner
       # in a later phase - they need the MAUI workloads plus platform SDKs, which
       # would slow this check down considerably. Everything the mobile app relies
-      # on that is not platform-specific lives in FleetGo.Shared and is covered here.
+      # on that is not platform-specific lives in FleetGo.Shared and, since Phase 2,
+      # FleetGo.Mobile.Core (view models and session logic - see that project's own
+      # comments) - both covered here via the two test projects, which reference
+      # them without pulling in the MAUI workload.
       - name: Restore
         run: |
           dotnet restore tests/FleetGo.API.Tests/FleetGo.API.Tests.csproj
@@ -39,7 +42,14 @@ jobs:
           dotnet build tests/FleetGo.API.Tests/FleetGo.API.Tests.csproj --configuration Release --no-restore
           dotnet build tests/FleetGo.Mobile.Tests/FleetGo.Mobile.Tests.csproj --configuration Release --no-restore
 
+      # Microsoft.Testing.Platform (MTP) mode - see global.json's "test" section - takes
+      # the project as the --project option rather than positionally. The previous form
+      # here (dotnet test tests/X/X.csproj, the path passed positionally) invokes the
+      # legacy VSTest bridge, which the .NET 10 SDK removed for MTP-based test projects
+      # like these - see docs/development-setup.md, "Testing with VSTest target is no
+      # longer supported by Microsoft.Testing.Platform".
       - name: Test
         run: |
-          dotnet test tests/FleetGo.API.Tests/FleetGo.API.Tests.csproj --configuration Release --no-build --verbosity normal
-          dotnet test tests/FleetGo.Mobile.Tests/FleetGo.Mobile.Tests.csproj --configuration Release --no-build --verbosity normal
+          dotnet test --project tests/FleetGo.API.Tests/FleetGo.API.Tests.csproj --configuration Release --no-build --verbosity normal
+          dotnet test --project tests/FleetGo.Mobile.Tests/FleetGo.Mobile.Tests.csproj --configuration Release --no-build --verbosity normal
+

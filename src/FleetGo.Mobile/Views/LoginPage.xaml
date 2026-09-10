@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:viewmodels="clr-namespace:FleetGo.Mobile.Core.ViewModels;assembly=FleetGo.Mobile.Core"
+             x:Class="FleetGo.Mobile.Views.LoginPage"
+             x:DataType="viewmodels:LoginViewModel"
+             Title="Sign in"
+             Shell.NavBarIsVisible="False">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="24,48" Spacing="20" VerticalOptions="Center">
+
+            <Label Text="FleetGo"
+                   Style="{StaticResource Headline}"
+                   HorizontalOptions="Center"
+                   SemanticProperties.HeadingLevel="Level1" />
+
+            <Label Text="Sign in to start your route"
+                   Style="{StaticResource SubHeadline}"
+                   HorizontalOptions="Center"
+                   SemanticProperties.HeadingLevel="Level2" />
+
+            <VerticalStackLayout Spacing="6" Margin="0,20,0,0">
+                <Label Text="Email" FontAttributes="Bold" />
+                <Entry Text="{Binding Email}"
+                       Placeholder="you@example.com"
+                       Keyboard="Email"
+                       IsSpellCheckEnabled="False"
+                       IsTextPredictionEnabled="False"
+                       ReturnType="Next"
+                       SemanticProperties.Hint="Your account email address" />
+            </VerticalStackLayout>
+
+            <VerticalStackLayout Spacing="6">
+                <Label Text="Password" FontAttributes="Bold" />
+                <Entry Text="{Binding Password}"
+                       IsPassword="True"
+                       ReturnType="Go"
+                       ReturnCommand="{Binding LoginCommand}"
+                       SemanticProperties.Hint="Your account password" />
+            </VerticalStackLayout>
+
+            <Label Text="{Binding ErrorMessage}"
+                   TextColor="{StaticResource Danger}"
+                   IsVisible="{Binding HasErrorMessage}"
+                   LineBreakMode="WordWrap" />
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}"
+                                IsVisible="{Binding IsBusy}"
+                                HorizontalOptions="Center" />
+
+            <Button Text="Sign in"
+                    Command="{Binding LoginCommand}"
+                    IsEnabled="{Binding IsNotBusy}"
+                    HorizontalOptions="Fill"
+                    Margin="0,12,0,0" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>
+
