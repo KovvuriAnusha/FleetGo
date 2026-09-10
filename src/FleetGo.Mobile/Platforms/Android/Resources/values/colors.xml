@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Read by Android before the .NET runtime starts (splash screen, status bar). -->
+<resources>
+    <color name="colorPrimary">#0B63E5</color>
+    <color name="colorPrimaryDark">#063A87</color>
+    <color name="colorAccent">#00B39F</color>
+</resources>

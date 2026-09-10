@@ -1,0 +1,23 @@
+# Normalise line endings: text files are LF in the repository, native on checkout.
+* text=auto
+
+*.cs        text diff=csharp
+*.csproj    text eol=crlf
+*.sln       text eol=crlf
+*.props     text
+*.targets   text
+*.xaml      text
+*.json      text
+*.xml       text
+*.md        text
+*.yml       text
+*.plist     text
+*.sh        text eol=lf
+
+# Binary assets - never diff or normalise these.
+*.png       binary
+*.jpg       binary
+*.ttf       binary
+*.otf       binary
+*.ico       binary
+*.keystore  binary

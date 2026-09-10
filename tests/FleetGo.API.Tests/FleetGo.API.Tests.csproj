@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Integration tests for the API. They boot the real host in memory through
+    WebApplicationFactory, so routing, DI, serialisation and the HTTP pipeline are
+    all exercised exactly as they are in production - no mocks of our own code.
+
+    Test runner: Microsoft.Testing.Platform (MTP). xUnit v3 hosts its own runner
+    inside the test executable, and the .NET 10 SDK no longer bridges that through
+    the legacy VSTest target - hence no Microsoft.NET.Test.Sdk and no
+    xunit.runner.visualstudio here. `dotnet test` is pointed at MTP by the "test"
+    section of global.json.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- xUnit v3 test projects are executables: they self-host their runner. -->
+    <OutputType>Exe</OutputType>
+    <!-- Run through Microsoft.Testing.Platform instead of VSTest. -->
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="4.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\FleetGo.API\FleetGo.API.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

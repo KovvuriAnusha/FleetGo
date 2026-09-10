@@ -1,0 +1,70 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.12.35527.113
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{C89CD333-56B4-46CF-964E-FF5A2A0416EF}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{47DB2FD7-7659-4967-8CDF-CED305591DE8}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{5258BA62-9250-4901-9B5D-B3DC646A8BFF}"
+	ProjectSection(SolutionItems) = preProject
+		.editorconfig = .editorconfig
+		.gitattributes = .gitattributes
+		.gitignore = .gitignore
+		Directory.Build.props = Directory.Build.props
+		global.json = global.json
+		README.md = README.md
+		LICENSE = LICENSE
+	EndProjectSection
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FleetGo.Shared", "src\FleetGo.Shared\FleetGo.Shared.csproj", "{87403337-A4F7-4D8F-9201-F42F18060454}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FleetGo.API", "src\FleetGo.API\FleetGo.API.csproj", "{4AC683B1-134C-4EBA-8A9A-62D502CBC179}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FleetGo.Mobile", "src\FleetGo.Mobile\FleetGo.Mobile.csproj", "{11974C16-A6D4-49BE-92DB-3B3983644B51}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FleetGo.API.Tests", "tests\FleetGo.API.Tests\FleetGo.API.Tests.csproj", "{F6C9A04F-46D5-40CE-AD19-D071F9EEA3B4}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FleetGo.Mobile.Tests", "tests\FleetGo.Mobile.Tests\FleetGo.Mobile.Tests.csproj", "{47C7AD06-4A2E-4FAF-917D-B5353924D8D8}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{87403337-A4F7-4D8F-9201-F42F18060454}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{87403337-A4F7-4D8F-9201-F42F18060454}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{87403337-A4F7-4D8F-9201-F42F18060454}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{87403337-A4F7-4D8F-9201-F42F18060454}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4AC683B1-134C-4EBA-8A9A-62D502CBC179}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4AC683B1-134C-4EBA-8A9A-62D502CBC179}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4AC683B1-134C-4EBA-8A9A-62D502CBC179}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4AC683B1-134C-4EBA-8A9A-62D502CBC179}.Release|Any CPU.Build.0 = Release|Any CPU
+		{11974C16-A6D4-49BE-92DB-3B3983644B51}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{11974C16-A6D4-49BE-92DB-3B3983644B51}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{11974C16-A6D4-49BE-92DB-3B3983644B51}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{11974C16-A6D4-49BE-92DB-3B3983644B51}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F6C9A04F-46D5-40CE-AD19-D071F9EEA3B4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F6C9A04F-46D5-40CE-AD19-D071F9EEA3B4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F6C9A04F-46D5-40CE-AD19-D071F9EEA3B4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F6C9A04F-46D5-40CE-AD19-D071F9EEA3B4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{47C7AD06-4A2E-4FAF-917D-B5353924D8D8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{47C7AD06-4A2E-4FAF-917D-B5353924D8D8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{47C7AD06-4A2E-4FAF-917D-B5353924D8D8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{47C7AD06-4A2E-4FAF-917D-B5353924D8D8}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{87403337-A4F7-4D8F-9201-F42F18060454} = {C89CD333-56B4-46CF-964E-FF5A2A0416EF}
+		{4AC683B1-134C-4EBA-8A9A-62D502CBC179} = {C89CD333-56B4-46CF-964E-FF5A2A0416EF}
+		{11974C16-A6D4-49BE-92DB-3B3983644B51} = {C89CD333-56B4-46CF-964E-FF5A2A0416EF}
+		{F6C9A04F-46D5-40CE-AD19-D071F9EEA3B4} = {47DB2FD7-7659-4967-8CDF-CED305591DE8}
+		{47C7AD06-4A2E-4FAF-917D-B5353924D8D8} = {47DB2FD7-7659-4967-8CDF-CED305591DE8}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {F24163D1-43FF-4C1F-8365-91E9C897275E}
+	EndGlobalSection
+EndGlobal
