@@ -21,5 +21,14 @@ internal interface IAuthService
 
     /// <summary>Revokes a refresh token. Safe to call with an already-revoked, expired or unknown token.</summary>
     Task LogoutAsync(string refreshToken, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Issues a fresh access/refresh token pair for an already-verified user, exactly as
+    /// <see cref="LoginAsync"/> does after checking a password. Used by <see cref="OtpService"/>
+    /// once an OTP has been verified, so a successful OTP check produces a normal session
+    /// through the same code path a password login uses - not a second, parallel way of
+    /// minting tokens that could drift from the real one.
+    /// </summary>
+    Task<AuthOutcome> IssueSessionForUserAsync(FleetGo.API.Data.Entities.User user, CancellationToken cancellationToken);
 }
 

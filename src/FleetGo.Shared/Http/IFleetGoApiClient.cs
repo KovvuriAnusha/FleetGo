@@ -56,5 +56,22 @@ public interface IFleetGoApiClient
     /// Thrown with status <c>401 Unauthorized</c> when there is no valid access token.
     /// </exception>
     Task<CurrentUserResponse> GetCurrentUserAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Requests a one-time login code. Always completes successfully - the server responds
+    /// the same way whether or not the email is real (see <c>ApiRoutes.AuthOtpRequest</c>),
+    /// so there is no "unknown account" exception to catch here.
+    /// </summary>
+    Task RequestOtpAsync(RequestOtpRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Exchanges a one-time code for a token pair, exactly as <see cref="LoginAsync"/> does
+    /// for a password.
+    /// </summary>
+    /// <exception cref="FleetGoApiException">
+    /// Thrown with status <c>401 Unauthorized</c> when the code is wrong, expired,
+    /// already used, or the account is not eligible.
+    /// </exception>
+    Task<TokenResponse> VerifyOtpAsync(VerifyOtpRequest request, CancellationToken cancellationToken = default);
 }
 

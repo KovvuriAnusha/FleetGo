@@ -241,6 +241,93 @@ time. This lives in the page's code-behind rather than the view model on purpose
 navigation decision ("skip this page entirely"), and `LoginViewModel` otherwise knows nothing about
 Shell or navigation, matching how `HomeViewModel` never references a page.
 
+## Phase 3: OTP and biometric unlock
+
+### OTP hashing: a per-row random salt plus a server-side pepper, not a plain hash
+
+A 6-digit code has a keyspace of one million. Hashing it the way a password is hashed (a
+per-row salt alone, fed through a slow KDF) is still not enough: it makes precomputed rainbow
+tables useless, but a leaked `OtpCodes` table can still be brute-forced offline in well under a
+second per row, salt included, because the attacker only has to try a million guesses. `OtpService`
+instead computes `HMAC-SHA256(key: Otp:HashingKey, message: salt || code)` - the server-side key
+(`Otp:HashingKey`, validated at startup the same way `Jwt:SigningKey` is) is what an attacker with
+only the database does not have, so offline brute force is not an option regardless of the code's
+keyspace. The random salt is still there too, so two identical codes issued to different users (or
+the same user at different times) never hash identically. Comparison uses
+`CryptographicOperations.FixedTimeEquals`, not `==`, so timing does not leak how many leading bytes
+of a guess were correct.
+
+### `IOtpSender`: an abstraction with a fail-fast production guard, not a stub
+
+The API needed *something* to send an OTP through to demonstrate and test the flow, without adding
+a paid SMS dependency (Twilio or similar) that was not already part of this repository.
+`IOtpSender` is the seam a real provider plugs into later; `DevelopmentOtpSender` (which logs the
+code, clearly marked `[DEV-ONLY OTP - NEVER LOGGED IN PRODUCTION]`) is registered only when the
+host environment is Development or Testing - `Program.cs` throws at startup if nothing else is
+registered outside those environments, so shipping this to production without wiring in a real
+sender is a startup crash, not a silent plaintext-OTP-in-the-logs incident.
+
+### Two independent layers of OTP throttling
+
+`OtpService` enforces its own per-user/per-purpose resend cooldown (`Otp:ResendCooldownSeconds`) -
+this is what stops a driver, or an attacker who knows a phone number, from requesting a fresh code
+before the last one even expires, regardless of which IP the request comes from. Separately,
+`/api/v1/auth/otp/request` and `/verify` are wrapped in ASP.NET Core's built-in
+`Microsoft.AspNetCore.RateLimiting` middleware, partitioned by caller IP, with a stricter window on
+`/verify` than `/request` (`Otp:VerifyRateLimit`/`Otp:RequestRateLimit`) - this is what stops an
+attacker from brute-forcing a 6-digit code by spraying verification attempts across many accounts.
+Neither layer alone covers both threats; both are cheap enough (no extra NuGet package - the
+rate-limiting middleware has shipped in the shared framework since .NET 7) that there was no reason
+to pick just one.
+
+### OTP verification issues a normal session, not a second authentication mechanism
+
+`POST /api/v1/auth/otp/verify` calls the same `IAuthService.IssueSessionForUserAsync` that
+password login uses internally (a thin wrapper over the existing private token-issuance method) -
+a driver who signs in with a code gets the exact same access/refresh token pair, on the exact same
+claims, as a driver who signs in with a password. There is one authenticated session shape in this
+system, not one per login method.
+
+### Biometric unlock is a local UI gate, not a second way to prove identity to the server
+
+This is the most important constraint in this phase: biometrics never talk to the API and never
+mint a token. `IBiometricUnlockCoordinator.TryUnlockAsync` (called once, at app launch, before
+`LoginPage` decides whether to show the login form) checks the driver's opt-in preference, then
+that a session is actually stored locally, then runs a live biometric challenge through
+`IBiometricAuthenticator`, and only on success calls the same `TryRestoreSessionAsync()` every app
+launch already used - the same server-verified refresh call, not a shortcut around it. A device
+without any stored session, or one where biometrics are not enrolled, simply never gets to try; a
+device that fails or cancels a biometric challenge is *not* allowed to fall through to a plain
+session restore (see `LoginPage.OnAppearing`) - otherwise "opting into biometric unlock" would not
+actually gate anything, since a cancelled prompt could just be waved through.
+
+### The biometric preference lives in `Preferences`, not Keychain/Keystore
+
+`IBiometricPreferenceStore` stores exactly one boolean - "this driver wants biometric unlock on
+this device" - and nothing else. It is not a secret (knowing it is `true` reveals nothing an
+attacker could use; the actual session tokens stay in `ISecureTokenStore`, untouched by this
+phase), so `Microsoft.Maui.Storage.Preferences` is the right level of protection - reaching for
+Keychain/Keystore for a UI preference would overstate what is actually being protected.
+
+### Android: SMS Retriever, never `READ_SMS`/`RECEIVE_SMS`
+
+`AndroidOtpAutofillListener` uses the Google Play Services SMS Retriever API, which hands the app
+the text of exactly one incoming message - only if it ends with this app's own signature hash - and
+nothing else in the device's inbox. `AndroidManifest.xml` requests no SMS permission at all for
+this: `READ_SMS`/`RECEIVE_SMS` would let the app read every message on the device, which is far
+more than "autofill this one code" needs and is exactly the kind of permission overreach a driver
+(and an app store review) would be right to flag. Manual entry works identically whether or not the
+retriever ever fires (timeout, a differently-formatted message, Play Services unavailable).
+
+### iOS/Mac Catalyst: the one-time-code keyboard, not SMS access
+
+iOS has no equivalent in-app SMS API this app could safely use, and the platform's own answer is
+different from Android's: `UITextContentType.OneTimeCode` on the code entry field turns on the
+system QuickType keyboard suggestion, which reads the incoming message at the OS level, entirely
+outside this app's process. `MauiProgram.ConfigureOtpAutofillKeyboard` wires this up for exactly the
+one `Entry` marked `StyleId="OtpCodeEntry"` via a MAUI handler mapping; app code never sees the
+message. Manual entry remains the fallback if the suggestion does not appear.
+
 ## Testing
 
 `FleetGo.API.Tests` boots the real host in memory with `WebApplicationFactory`, so routing, DI,
@@ -279,8 +366,11 @@ ceremony without benefit; it can join `FleetGo.Mobile.Core` the same way if that
 
 Central package management, a `Directory.Packages.props`, Serilog, MediatR, a repository layer, an
 `Application`/`Domain`/`Infrastructure` split, a full ASP.NET Core Identity setup (see "Phase 2:
-authentication" above for why `PasswordHasher<TUser>` alone was enough), rate limiting on login
-attempts, and a reactive "refresh on 401, retry once" HTTP handler (`GetAccessTokenAsync` refreshes
+authentication" above for why `PasswordHasher<TUser>` alone was enough), rate limiting on
+*password* login attempts (Phase 3 added IP-partitioned rate limiting to the OTP endpoints
+specifically - see "Phase 3: OTP and biometric unlock" above - `POST /api/v1/auth/login` itself
+still has none; extending the same middleware to it is straightforward and worth doing before this
+API is internet-facing), and a reactive "refresh on 401, retry once" HTTP handler (`GetAccessTokenAsync` refreshes
 proactively before a token's expiry instead - see that method's comments - which covers the common
 case without the added complexity of safely avoiding recursion between a retry handler and the
 refresh call itself; the roadmap's "authenticated handler that refreshes on 401" is still worth
@@ -296,10 +386,14 @@ The repository is public, so:
 
 - No secrets, keys, connection strings with credentials, certificates or tokens are ever committed.
   Local development secrets go in `dotnet user-secrets` (the API project has a `UserSecretsId`);
-  deployed environments use environment variables. As of Phase 2, this covers `Jwt:SigningKey` and
-  `ConnectionStrings:FleetGoDatabase` specifically - see docs/development-setup.md.
+  deployed environments use environment variables. As of Phase 3, this covers `Jwt:SigningKey`,
+  `Otp:HashingKey` and `ConnectionStrings:FleetGoDatabase` specifically - see
+  docs/development-setup.md.
 - `appsettings.*.Local.json`, `.env`, `*.keystore`, `*.p12` and friends are in `.gitignore`.
 - Payment work uses sandbox credentials only, supplied at runtime, never checked in.
 - Passwords are never stored or logged in plaintext (`PasswordHasher<TUser>`); refresh tokens are
-  never stored in plaintext either (SHA-256 hash only) - see "Phase 2: authentication" above.
+  never stored in plaintext either (SHA-256 hash only) - see "Phase 2: authentication" above. As of
+  Phase 3, one-time codes follow the same rule - only a salted HMAC hash is ever stored, and the
+  plaintext code is only ever logged by `DevelopmentOtpSender`, which cannot register outside
+  Development/Testing (see "Phase 3: OTP and biometric unlock" above).
 

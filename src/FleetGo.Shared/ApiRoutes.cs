@@ -39,5 +39,14 @@ public static class ApiRoutes
 
     /// <summary>Returns the profile of the currently authenticated user.</summary>
     public const string AuthMe = AuthBase + "/me";
+
+    /// <summary>Base path for one-time-code endpoints.</summary>
+    public const string AuthOtpBase = AuthBase + "/otp";
+
+    /// <summary>Requests a one-time login code be sent to the account's phone number on file.</summary>
+    public const string AuthOtpRequest = AuthOtpBase + "/request";
+
+    /// <summary>Exchanges a valid one-time code for an access and refresh token, exactly as a password login does.</summary>
+    public const string AuthOtpVerify = AuthOtpBase + "/verify";
 }
 

@@ -60,6 +60,31 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.12" />
   </ItemGroup>
 
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
+    <!-- SMS Retriever API - Android's permission-free OTP autofill mechanism (see
+         Platforms/Android/AndroidOtpAutofillListener.cs). Deliberately NOT SmsRetriever's
+         sibling "SMS User Consent API" package, which shows the user a system dialog
+         before releasing the message - the Retriever API autofills silently, which is
+         the behaviour Phase 3 asks for.
+         Version pinned to the exact release published for net10.0-android36.0 (confirmed
+         on nuget.org - the originally-written "118.1.0.1" does not exist as a real
+         version, which is what produced NU1603 against a real Mac restore). Binds
+         com.google.android.gms:play-services-auth 21.6.0 - SmsRetriever's API surface
+         (SmsRetrievedAction/ExtraStatus/ExtraSmsMessage/GetClient/StartSmsRetriever) is
+         unchanged from the version this was originally written against, so no source
+         changes were needed in the two files that use it. -->
+    <PackageReference Include="Xamarin.GooglePlayServices.Auth" Version="121.6.0.1" />
+    <!-- AndroidX Biometric - Google's recommended replacement for the deprecated
+         FingerprintManager, covering fingerprint and face unlock alike through one API
+         (see Platforms/Android/AndroidBiometricAuthenticator.cs).
+         Version pinned to the exact, current release published for net10.0-android36.0
+         (confirmed on nuget.org - "1.2.0.5" does not exist; this binding has never gone
+         past androidx.biometric 1.1.0 upstream, which 1.1.0.33 still binds unchanged, so
+         AndroidBiometricAuthenticator.cs's BiometricManager/BiometricPrompt usage needed
+         no changes either). -->
+    <PackageReference Include="Xamarin.AndroidX.Biometric" Version="1.1.0.33" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\FleetGo.Shared\FleetGo.Shared.csproj" />
     <ProjectReference Include="..\FleetGo.Mobile.Core\FleetGo.Mobile.Core.csproj" />

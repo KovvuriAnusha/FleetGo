@@ -38,5 +38,28 @@ public interface IAuthenticationService
     /// storage) when there is nothing to restore or the stored refresh token no longer works.
     /// </summary>
     Task<bool> TryRestoreSessionAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Cheap check for "is there a session in secure storage worth trying to restore or
+    /// unlock" - unlike <see cref="TryRestoreSessionAsync"/>, this never calls the API and
+    /// never mutates <see cref="IsAuthenticated"/>. <see cref="FleetGo.Mobile.Core.Biometrics.BiometricUnlockCoordinator"/>
+    /// uses this to decide whether offering a biometric prompt makes sense at all before
+    /// it ever touches the biometric hardware.
+    /// </summary>
+    Task<bool> HasStoredSessionAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Requests a one-time login code for <paramref name="email"/>. Always completes the
+    /// same way - see <c>IFleetGoApiClient.RequestOtpAsync</c> for why there is nothing to
+    /// distinguish "sent" from "not eligible" here.
+    /// </summary>
+    Task RequestOtpAsync(string email, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Verifies a one-time code and, on success, stores the returned tokens and loads the
+    /// current user's profile - exactly like <see cref="LoginAsync"/>, because OTP verification
+    /// produces a normal session rather than a second, different kind of one.
+    /// </summary>
+    Task<AuthResult> VerifyOtpAsync(string email, string code, CancellationToken cancellationToken = default);
 }
 

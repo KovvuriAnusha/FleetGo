@@ -10,5 +10,11 @@
   <uses-permission android:name="android.permission.INTERNET" />
   <!-- Required by IConnectivity to report whether the device has a usable network. -->
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+  <!-- Biometric unlock (AndroidX Biometric). A "normal" permission the system grants
+       automatically at install time - never a runtime prompt, and it does not by itself
+       let the app read any biometric data (see AndroidBiometricAuthenticator.cs). -->
+  <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+  <!-- SMS Retriever API OTP autofill (AndroidOtpAutofillListener.cs). Deliberately NOT
+       READ_SMS or RECEIVE_SMS - the whole point of this API is that it needs neither. -->
 
 </manifest>

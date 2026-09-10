@@ -95,6 +95,41 @@
                     HorizontalOptions="Fill"
                     SemanticProperties.Hint="Calls the FleetGo API and reports whether it is reachable" />
 
+            <!-- Biometric unlock. Hidden entirely when the device can't do it, rather than
+                 shown disabled - a driver on hardware with no biometric sensor never sees a
+                 toggle to be confused by. The Switch binds IsToggled one-way from the view
+                 model; the Toggled handler in HomePage.xaml.cs is what actually asks the
+                 coordinator to enable/disable, and only then is IsBiometricUnlockEnabled
+                 updated - so a cancelled or failed enable attempt visibly snaps back off
+                 instead of leaving the switch in a state the app didn't actually reach. -->
+            <Border Padding="16"
+                    StrokeThickness="1"
+                    Stroke="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray600}}"
+                    BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource Gray950}}"
+                    IsVisible="{Binding IsBiometricUnlockAvailable}">
+                <Border.StrokeShape>
+                    <RoundRectangle CornerRadius="12" />
+                </Border.StrokeShape>
+
+                <VerticalStackLayout Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Grid.Column="0"
+                               Text="Unlock with biometrics"
+                               VerticalOptions="Center" />
+                        <Switch Grid.Column="1"
+                                x:Name="BiometricSwitch"
+                                IsToggled="{Binding IsBiometricUnlockEnabled, Mode=OneWay}"
+                                Toggled="OnBiometricSwitchToggled"
+                                SemanticProperties.Hint="Turn biometric unlock on or off for this device" />
+                    </Grid>
+
+                    <Label Text="{Binding BiometricStatusMessage}"
+                           TextColor="{StaticResource Danger}"
+                           IsVisible="{Binding HasBiometricStatusMessage}"
+                           LineBreakMode="WordWrap" />
+                </VerticalStackLayout>
+            </Border>
+
             <!-- Session -->
             <Grid ColumnDefinitions="*,Auto" Margin="0,12,0,0">
                 <Label Grid.Column="0"

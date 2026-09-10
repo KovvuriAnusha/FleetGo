@@ -111,6 +111,9 @@ internal sealed class AuthService : IAuthService
         return outcome;
     }
 
+    public Task<AuthOutcome> IssueSessionForUserAsync(User user, CancellationToken cancellationToken) =>
+        IssueTokenPairAsync(user, cancellationToken);
+
     public async Task LogoutAsync(string refreshToken, CancellationToken cancellationToken)
     {
         byte[] presentedHash = Hash(refreshToken);

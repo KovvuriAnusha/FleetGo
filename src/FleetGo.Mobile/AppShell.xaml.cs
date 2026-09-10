@@ -13,6 +13,7 @@ public partial class AppShell : Shell
         // LoginPage.xaml.cs and HomePage.xaml.cs), never as a tab a signed-out driver
         // could switch to directly.
         Routing.RegisterRoute("home", typeof(HomePage));
+        Routing.RegisterRoute("otp-verify", typeof(OtpVerificationPage));
     }
 }
 
