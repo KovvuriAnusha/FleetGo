@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Android blocks plain HTTP by default (since API 28), which is exactly what a
+    locally hosted development API speaks.
+
+    Rather than switching cleartext on for the whole app, this allows it only for
+    the two addresses that mean "the machine running the API": the emulator's
+    host alias (10.0.2.2) and localhost. Every other host still requires HTTPS.
+-->
+<network-security-config>
+  <domain-config cleartextTrafficPermitted="true">
+    <domain includeSubdomains="false">10.0.2.2</domain>
+    <domain includeSubdomains="false">localhost</domain>
+  </domain-config>
+</network-security-config>

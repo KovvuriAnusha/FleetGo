@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    FleetGo.API - the ASP.NET Core Web API host.
+
+    Phase 1 keeps this deliberately thin: OpenAPI, health checks, ProblemDetails
+    and one system endpoint. Persistence, authentication and the domain modules
+    arrive in later phases.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+
+    <!-- Smaller container image and predictable string comparisons on Linux hosts. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- Lets `dotnet user-secrets` store local development secrets OUTSIDE the repo. -->
+    <UserSecretsId>fleetgo-api-4f6c1c2a-8f3b-4a1a-9b1e-2d5f7c0a91d4</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Built-in OpenAPI document generation (replaces Swashbuckle's generator in .NET 9+). -->
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+    <!-- Interactive API reference UI rendered from that OpenAPI document. -->
+    <PackageReference Include="Scalar.AspNetCore" Version="2.17.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FleetGo.Shared\FleetGo.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The integration test project drives this host through WebApplicationFactory. -->
+    <InternalsVisibleTo Include="FleetGo.API.Tests" />
+  </ItemGroup>
+
+</Project>

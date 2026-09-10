@@ -1,0 +1,35 @@
+<Project>
+
+  <!--
+    Solution-wide MSBuild defaults.
+
+    Every project under this folder imports this file automatically, so shared
+    settings live here instead of being copy-pasted into each .csproj.
+    Deliberately NOT set here: TargetFramework(s) and package versions - those
+    stay in the individual projects where they are easy to see and reason about.
+  -->
+
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- Fail the build on accidental use of an API that is not available on a target platform. -->
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+
+    <!-- Reproducible builds: identical inputs produce byte-identical outputs. -->
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <!-- Assembly / package metadata shared by every project. -->
+    <Product>FleetGo</Product>
+    <Authors>Anusha Kovvuri</Authors>
+    <Company>FleetGo</Company>
+    <Copyright>Copyright (c) 2026 Anusha Kovvuri</Copyright>
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <RepositoryUrl>https://github.com/KovvuriAnusha/FleetGo</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+</Project>

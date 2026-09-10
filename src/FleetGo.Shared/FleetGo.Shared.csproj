@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    FleetGo.Shared - the wire contract between the API and the mobile app.
+
+    Contains ONLY things both sides must agree on: request/response DTOs, route
+    constants, JSON settings and the typed HTTP client that speaks them.
+    It has no NuGet dependencies and no knowledge of ASP.NET Core, EF Core or
+    .NET MAUI, which is what lets both a web host and a mobile app reference it.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>FleetGo.Shared</RootNamespace>
+
+    <!-- Consumed by a trimmed/AOT mobile release build, so keep it analysable. -->
+    <IsTrimmable>true</IsTrimmable>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+</Project>

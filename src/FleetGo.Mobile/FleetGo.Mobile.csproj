@@ -1,0 +1,67 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    FleetGo.Mobile - the .NET MAUI driver app.
+
+    One project, three platform heads (SingleProject). Platform-specific code
+    lives under Platforms/ and is compiled only into the head it belongs to.
+  -->
+
+  <PropertyGroup>
+    <TargetFrameworks>net10.0-android;net10.0-ios;net10.0-maccatalyst</TargetFrameworks>
+    <!-- To build the Windows head, add on a Windows machine:
+         <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('windows'))">$(TargetFrameworks);net10.0-windows10.0.19041.0</TargetFrameworks>
+         and a Platforms/Windows folder. -->
+
+    <OutputType>Exe</OutputType>
+    <RootNamespace>FleetGo.Mobile</RootNamespace>
+    <UseMaui>true</UseMaui>
+    <SingleProject>true</SingleProject>
+
+    <!-- Compile XAML bindings instead of resolving them by reflection at runtime:
+         faster, trimming-safe, and binding typos become build errors. Requires
+         x:DataType on every binding scope. -->
+    <MauiEnableXamlCBindingWithSourceCompilation>true</MauiEnableXamlCBindingWithSourceCompilation>
+
+    <!-- Display name and identity -->
+    <ApplicationTitle>FleetGo</ApplicationTitle>
+    <ApplicationId>com.fleetgo.mobile</ApplicationId>
+
+    <!-- Versions: DisplayVersion is what users see, ApplicationVersion is the
+         monotonically increasing build number the stores require. -->
+    <ApplicationDisplayVersion>0.1.0</ApplicationDisplayVersion>
+    <ApplicationVersion>1</ApplicationVersion>
+
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">24.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">15.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">15.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- App icon: the foreground SVG is composited over the Color background. -->
+    <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#0B63E5" />
+
+    <!-- Splash screen -->
+    <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#0B63E5" BaseSize="128,128" />
+
+    <!-- Images, fonts and raw assets -->
+    <MauiImage Include="Resources\Images\*" />
+    <MauiFont Include="Resources\Fonts\*" />
+    <MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
+    <!-- MVVM source generators: ObservableObject, [ObservableProperty], [RelayCommand]. -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <!-- IHttpClientFactory: pooled handlers, per-client configuration, and the
+         seam where retry/resilience policies are added in a later phase. -->
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FleetGo.Shared\FleetGo.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:viewmodels="clr-namespace:FleetGo.Mobile.ViewModels"
+             x:Class="FleetGo.Mobile.Views.HomePage"
+             x:DataType="viewmodels:HomeViewModel"
+             Title="FleetGo">
+
+    <!--
+        x:DataType turns every binding on this page into compiled, type-checked
+        code. A renamed view model property becomes a build error here instead of
+        a blank label at runtime.
+    -->
+
+    <ScrollView>
+        <VerticalStackLayout Padding="24,32" Spacing="20">
+
+            <Label Text="FleetGo"
+                   Style="{StaticResource Headline}"
+                   SemanticProperties.HeadingLevel="Level1" />
+
+            <Label Text="Driver and delivery operations"
+                   Style="{StaticResource SubHeadline}"
+                   SemanticProperties.HeadingLevel="Level2" />
+
+            <!-- Connection status -->
+            <Border Padding="16"
+                    StrokeThickness="1"
+                    Stroke="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray600}}"
+                    BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource Gray950}}">
+                <Border.StrokeShape>
+                    <RoundRectangle CornerRadius="12" />
+                </Border.StrokeShape>
+
+                <VerticalStackLayout Spacing="12">
+
+                    <HorizontalStackLayout Spacing="10">
+                        <Label Text="●"
+                               FontSize="18"
+                               VerticalOptions="Center"
+                               TextColor="{StaticResource Gray400}"
+                               SemanticProperties.Description="API connection indicator">
+                            <Label.Triggers>
+                                <DataTrigger TargetType="Label" Binding="{Binding IsApiReachable}" Value="True">
+                                    <Setter Property="TextColor" Value="{StaticResource Success}" />
+                                </DataTrigger>
+                                <DataTrigger TargetType="Label" Binding="{Binding IsApiReachable}" Value="False">
+                                    <Setter Property="TextColor" Value="{StaticResource Danger}" />
+                                </DataTrigger>
+                            </Label.Triggers>
+                        </Label>
+
+                        <Label Text="{Binding StatusMessage}"
+                               VerticalOptions="Center"
+                               LineBreakMode="WordWrap" />
+                    </HorizontalStackLayout>
+
+                    <ActivityIndicator IsRunning="{Binding IsBusy}"
+                                       IsVisible="{Binding IsBusy}"
+                                       HorizontalOptions="Start" />
+                </VerticalStackLayout>
+            </Border>
+
+            <!-- What we are talking to -->
+            <Border Padding="16"
+                    StrokeThickness="1"
+                    Stroke="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray600}}"
+                    BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource Gray950}}">
+                <Border.StrokeShape>
+                    <RoundRectangle CornerRadius="12" />
+                </Border.StrokeShape>
+
+                <Grid RowDefinitions="Auto,Auto,Auto,Auto"
+                      ColumnDefinitions="Auto,*"
+                      RowSpacing="8"
+                      ColumnSpacing="16">
+
+                    <Label Grid.Row="0" Grid.Column="0" Text="API" FontAttributes="Bold" />
+                    <Label Grid.Row="0" Grid.Column="1" Text="{Binding ApiBaseAddress}" LineBreakMode="TailTruncation" />
+
+                    <Label Grid.Row="1" Grid.Column="0" Text="Version" FontAttributes="Bold" />
+                    <Label Grid.Row="1" Grid.Column="1" Text="{Binding ApiVersion}" />
+
+                    <Label Grid.Row="2" Grid.Column="0" Text="Environment" FontAttributes="Bold" />
+                    <Label Grid.Row="2" Grid.Column="1" Text="{Binding ApiEnvironment}" />
+
+                    <Label Grid.Row="3" Grid.Column="0" Text="Checked" FontAttributes="Bold" />
+                    <Label Grid.Row="3" Grid.Column="1" Text="{Binding LastCheckedText}" />
+                </Grid>
+            </Border>
+
+            <Button Text="Check connection"
+                    Command="{Binding CheckApiCommand}"
+                    IsEnabled="{Binding IsNotBusy}"
+                    HorizontalOptions="Fill"
+                    SemanticProperties.Hint="Calls the FleetGo API and reports whether it is reachable" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>

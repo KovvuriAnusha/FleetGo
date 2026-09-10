@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Unit tests for the client-side code the mobile app depends on.
+
+    This project targets plain net10.0 rather than a platform head, so it runs on
+    any machine and in CI without an emulator. It therefore references
+    FleetGo.Shared - the platform-independent half of the mobile stack - which is
+    where the typed API client and serialisation live. View model tests join this
+    project once view models exist (see docs/architecture.md).
+
+    Test runner: Microsoft.Testing.Platform, same as FleetGo.API.Tests.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- xUnit v3 test projects are executables: they self-host their runner. -->
+    <OutputType>Exe</OutputType>
+    <!-- Run through Microsoft.Testing.Platform instead of VSTest. -->
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="4.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\FleetGo.Shared\FleetGo.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>
