@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FleetGo.Mobile.Configuration;
+using FleetGo.Mobile.Core.Biometrics;
 using FleetGo.Mobile.Core.Session;
 using FleetGo.Shared.Contracts;
 using FleetGo.Shared.Http;
@@ -27,6 +28,7 @@ public sealed partial class HomeViewModel : ObservableObject
     private readonly IFleetGoApiClient _apiClient;
     private readonly IConnectivity _connectivity;
     private readonly IAuthenticationService _authenticationService;
+    private readonly IBiometricUnlockCoordinator _biometricUnlockCoordinator;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<HomeViewModel> _logger;
 
@@ -34,6 +36,7 @@ public sealed partial class HomeViewModel : ObservableObject
         IFleetGoApiClient apiClient,
         IConnectivity connectivity,
         IAuthenticationService authenticationService,
+        IBiometricUnlockCoordinator biometricUnlockCoordinator,
         ApiSettings apiSettings,
         TimeProvider timeProvider,
         ILogger<HomeViewModel> logger)
@@ -41,6 +44,7 @@ public sealed partial class HomeViewModel : ObservableObject
         _apiClient = apiClient;
         _connectivity = connectivity;
         _authenticationService = authenticationService;
+        _biometricUnlockCoordinator = biometricUnlockCoordinator;
         _timeProvider = timeProvider;
         _logger = logger;
 
@@ -56,6 +60,8 @@ public sealed partial class HomeViewModel : ObservableObject
         // moment login, session restore, or sign-out changes it.
         _authenticationService.AuthenticationStateChanged += OnAuthenticationStateChanged;
         SignedInAsText = BuildSignedInAsText();
+
+        _ = InitializeBiometricStateAsync();
     }
 
     /// <summary>Raised after a successful sign-out. The page handles navigation back to the login screen.</summary>
@@ -154,11 +160,71 @@ public sealed partial class HomeViewModel : ObservableObject
         }
     }
 
+    /// <summary>Whether this device can offer biometric unlock at all - the toggle in the UI is hidden when this is false.</summary>
+    [ObservableProperty]
+    public partial bool IsBiometricUnlockAvailable { get; set; }
+
+    /// <summary>Bound one-way from the Switch in HomePage.xaml - see its Toggled handler for why this is not a two-way binding.</summary>
+    [ObservableProperty]
+    public partial bool IsBiometricUnlockEnabled { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasBiometricStatusMessage))]
+    public partial string? BiometricStatusMessage { get; set; }
+
+    /// <summary>Backs the status label's IsVisible in HomePage.xaml - see HasErrorMessage on OtpVerificationViewModel for the same pattern.</summary>
+    public bool HasBiometricStatusMessage => !string.IsNullOrEmpty(BiometricStatusMessage);
+
     [RelayCommand]
     private async Task SignOutAsync()
     {
+        // A device this session's biometric preference was set on should not silently
+        // offer to unlock straight into whichever driver signs in next - it is cleared
+        // here rather than left for the next launch to discover there is no session left
+        // to unlock anyway.
+        await _biometricUnlockCoordinator.DisableAsync();
+        IsBiometricUnlockEnabled = false;
+
         await _authenticationService.LogoutAsync();
         SignedOut?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Called from HomePage.xaml.cs's Switch.Toggled handler with the value the user just
+    /// requested. Turning OFF is unconditional; turning ON requires a live biometric
+    /// challenge to succeed first (see <see cref="IBiometricUnlockCoordinator.EnableAsync"/>) -
+    /// either way, <see cref="IsBiometricUnlockEnabled"/> is only ever updated with what
+    /// actually happened, which is what makes the one-way binding in the page correct.
+    /// </summary>
+    [RelayCommand]
+    private async Task ToggleBiometricUnlockAsync(bool requestedEnabled)
+    {
+        BiometricStatusMessage = null;
+
+        if (!requestedEnabled)
+        {
+            await _biometricUnlockCoordinator.DisableAsync();
+            IsBiometricUnlockEnabled = false;
+            return;
+        }
+
+        BiometricEnableOutcome outcome = await _biometricUnlockCoordinator.EnableAsync();
+
+        IsBiometricUnlockEnabled = outcome == BiometricEnableOutcome.Enabled;
+        BiometricStatusMessage = outcome switch
+        {
+            BiometricEnableOutcome.Enabled => null,
+            BiometricEnableOutcome.NotAvailable => "Biometric unlock is not available on this device right now.",
+            BiometricEnableOutcome.Cancelled => "Biometric confirmation was cancelled - unlock was not enabled.",
+            _ => null,
+        };
+    }
+
+    private async Task InitializeBiometricStateAsync()
+    {
+        IsBiometricUnlockAvailable =
+            await _biometricUnlockCoordinator.CheckAvailabilityAsync() == BiometricAvailability.Available;
+        IsBiometricUnlockEnabled = await _biometricUnlockCoordinator.IsEnabledAsync();
     }
 
     private void SetFailure(string message)

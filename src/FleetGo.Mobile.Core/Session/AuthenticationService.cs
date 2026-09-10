@@ -55,6 +55,29 @@ public sealed class AuthenticationService : IAuthenticationService, IAccessToken
         return AuthResult.Success;
     }
 
+    public async Task<bool> HasStoredSessionAsync(CancellationToken cancellationToken = default) =>
+        _tokens is not null || await _tokenStore.LoadAsync(cancellationToken) is not null;
+
+    public Task RequestOtpAsync(string email, CancellationToken cancellationToken = default) =>
+        _apiClient.RequestOtpAsync(new RequestOtpRequest(email), cancellationToken);
+
+    public async Task<AuthResult> VerifyOtpAsync(string email, string code, CancellationToken cancellationToken = default)
+    {
+        TokenResponse tokens;
+        try
+        {
+            tokens = await _apiClient.VerifyOtpAsync(new VerifyOtpRequest(email, code), cancellationToken);
+        }
+        catch (FleetGoApiException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            return AuthResult.Failure("The code is incorrect, expired, or has already been used.");
+        }
+
+        // Same success path a password login takes - one session, however it was reached.
+        await StoreAndLoadProfileAsync(tokens, cancellationToken);
+        return AuthResult.Success;
+    }
+
     public async Task LogoutAsync(CancellationToken cancellationToken = default)
     {
         StoredTokens? current = _tokens;

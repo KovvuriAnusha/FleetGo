@@ -26,5 +26,7 @@ namespace FleetGo.Shared.Serialization;
 [JsonSerializable(typeof(RefreshTokenRequest))]
 [JsonSerializable(typeof(LogoutRequest))]
 [JsonSerializable(typeof(CurrentUserResponse))]
+[JsonSerializable(typeof(RequestOtpRequest))]
+[JsonSerializable(typeof(VerifyOtpRequest))]
 public sealed partial class FleetGoJsonSerializerContext : JsonSerializerContext;
 

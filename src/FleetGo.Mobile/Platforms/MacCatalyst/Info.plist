@@ -44,5 +44,11 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<!-- Required by LocalAuthentication before it may use Face ID (Touch ID needs
+	     no usage-description key). Shown once, the first time AppleBiometricAuthenticator
+	     evaluates a Face ID policy - without this key iOS/Mac Catalyst terminates the
+	     app outright rather than merely failing the call. -->
+	<key>NSFaceIDUsageDescription</key>
+	<string>FleetGo uses Face ID to let you unlock your existing signed-in session without re-entering your password.</string>
 </dict>
 </plist>

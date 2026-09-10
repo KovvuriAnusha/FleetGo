@@ -90,6 +90,26 @@ public sealed class FleetGoApiClient : IFleetGoApiClient
     public Task<CurrentUserResponse> GetCurrentUserAsync(CancellationToken cancellationToken = default) =>
         GetAsync(ApiRoutes.AuthMe, FleetGoJsonSerializerContext.Default.CurrentUserResponse, cancellationToken);
 
+    /// <inheritdoc />
+    public Task RequestOtpAsync(RequestOtpRequest request, CancellationToken cancellationToken = default) =>
+        PostNoContentAsync(
+            ApiRoutes.AuthOtpRequest,
+            request,
+            FleetGoJsonSerializerContext.Default.RequestOtpRequest,
+            cancellationToken,
+            // No session exists yet, and this call must never itself trigger a token refresh.
+            skipAuthentication: true);
+
+    /// <inheritdoc />
+    public Task<TokenResponse> VerifyOtpAsync(VerifyOtpRequest request, CancellationToken cancellationToken = default) =>
+        PostAsync(
+            ApiRoutes.AuthOtpVerify,
+            request,
+            FleetGoJsonSerializerContext.Default.VerifyOtpRequest,
+            FleetGoJsonSerializerContext.Default.TokenResponse,
+            cancellationToken,
+            skipAuthentication: true);
+
     private async Task<T> GetAsync<T>(
         string route,
         JsonTypeInfo<T> typeInfo,
@@ -131,6 +151,36 @@ public sealed class FleetGoApiClient : IFleetGoApiClient
 
         return await ReadBodyAsync("POST", route, response, responseTypeInfo, cancellationToken, alsoAcceptable)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>Like <see cref="PostAsync{TRequest, TResponse}"/>, for an endpoint whose success response has no body (204).</summary>
+    private async Task PostNoContentAsync<TRequest>(
+        string route,
+        TRequest body,
+        JsonTypeInfo<TRequest> requestTypeInfo,
+        CancellationToken cancellationToken,
+        bool skipAuthentication = false)
+    {
+        using HttpRequestMessage httpRequest = new(HttpMethod.Post, route)
+        {
+            Content = JsonContent.Create(body, requestTypeInfo),
+        };
+
+        if (skipAuthentication)
+        {
+            httpRequest.Options.Set(FleetGoHttpRequestOptions.SkipAuthentication, true);
+        }
+
+        using HttpResponseMessage response = await _httpClient
+            .SendAsync(httpRequest, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new FleetGoApiException(
+                $"POST {route} failed with HTTP {(int)response.StatusCode} ({response.ReasonPhrase}).",
+                response.StatusCode);
+        }
     }
 
     private static async Task<T> ReadBodyAsync<T>(

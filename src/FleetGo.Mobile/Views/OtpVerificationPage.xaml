@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:viewmodels="clr-namespace:FleetGo.Mobile.Core.ViewModels;assembly=FleetGo.Mobile.Core"
+             x:Class="FleetGo.Mobile.Views.OtpVerificationPage"
+             x:DataType="viewmodels:OtpVerificationViewModel"
+             Title="Sign in with a code">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="24,48" Spacing="20" VerticalOptions="Center">
+
+            <Label Text="Sign in with a code"
+                   Style="{StaticResource Headline}"
+                   HorizontalOptions="Center"
+                   SemanticProperties.HeadingLevel="Level1" />
+
+            <Label Text="We'll text a one-time code to the phone number on your account."
+                   Style="{StaticResource SubHeadline}"
+                   HorizontalOptions="Center"
+                   SemanticProperties.HeadingLevel="Level2" />
+
+            <!-- Stage 1: email. Hidden rather than removed once a code has been requested,
+                 so a driver can see which account they are signing into while entering the code. -->
+            <VerticalStackLayout Spacing="6" Margin="0,20,0,0" IsVisible="{Binding IsNotCodeStageVisible}">
+                <Label Text="Email" FontAttributes="Bold" />
+                <Entry Text="{Binding Email}"
+                       Placeholder="you@example.com"
+                       Keyboard="Email"
+                       IsSpellCheckEnabled="False"
+                       IsTextPredictionEnabled="False"
+                       ReturnType="Go"
+                       ReturnCommand="{Binding SendCodeCommand}"
+                       SemanticProperties.Hint="Your account email address" />
+
+                <Button Text="Send code"
+                        Command="{Binding SendCodeCommand}"
+                        IsEnabled="{Binding IsNotBusy}"
+                        HorizontalOptions="Fill"
+                        Margin="0,12,0,0" />
+            </VerticalStackLayout>
+
+            <!-- Stage 2: code entry. StyleId "OtpCodeEntry" is what MauiProgram's iOS/Mac
+                 Catalyst handler mapping looks for to turn on the one-time-code keyboard -
+                 see MauiProgram.cs. Manual entry always works here regardless of platform
+                 or whether autofill (Android SMS Retriever / the iOS QuickType suggestion)
+                 ever fires. -->
+            <VerticalStackLayout Spacing="6" Margin="0,20,0,0" IsVisible="{Binding IsCodeStageVisible}">
+                <Label Text="{Binding Email, StringFormat='Code sent to the phone number for {0}'}" />
+
+                <Entry x:Name="CodeEntry"
+                       StyleId="OtpCodeEntry"
+                       Text="{Binding Code}"
+                       Placeholder="123456"
+                       Keyboard="Numeric"
+                       MaxLength="8"
+                       ReturnType="Go"
+                       ReturnCommand="{Binding VerifyCommand}"
+                       SemanticProperties.Hint="The one-time code sent to your phone" />
+
+                <Button Text="Verify"
+                        Command="{Binding VerifyCommand}"
+                        IsEnabled="{Binding IsNotBusy}"
+                        HorizontalOptions="Fill"
+                        Margin="0,8,0,0" />
+
+                <Button Text="{Binding ResendButtonText}"
+                        Command="{Binding ResendCommand}"
+                        BackgroundColor="Transparent"
+                        TextColor="{StaticResource Primary}"
+                        HorizontalOptions="Center" />
+            </VerticalStackLayout>
+
+            <Label Text="{Binding ErrorMessage}"
+                   TextColor="{StaticResource Danger}"
+                   IsVisible="{Binding HasErrorMessage}"
+                   LineBreakMode="WordWrap" />
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}"
+                                IsVisible="{Binding IsBusy}"
+                                HorizontalOptions="Center" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>

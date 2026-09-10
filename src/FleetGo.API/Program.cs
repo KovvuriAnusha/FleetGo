@@ -1,15 +1,18 @@
 using System.Text;
+using System.Threading.RateLimiting;
 using FleetGo.API.Auth;
 using FleetGo.API.Auth.Options;
 using FleetGo.API.Data;
 using FleetGo.API.Data.Entities;
 using FleetGo.API.Endpoints;
 using FleetGo.API.Health;
+using FleetGo.API.RateLimiting;
 using FleetGo.Shared;
 using FleetGo.Shared.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
@@ -125,6 +128,77 @@ builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 
 // ---------------------------------------------------------------------------
+// One-time-code (OTP) login
+// ---------------------------------------------------------------------------
+
+builder.Services
+    .AddOptions<OtpOptions>()
+    .Bind(builder.Configuration.GetSection(OtpOptions.SectionName))
+    .Validate(
+        options => Encoding.UTF8.GetByteCount(options.HashingKey ?? string.Empty) >= 32,
+        "Otp:HashingKey must be configured and be at least 32 bytes (256 bits) once UTF-8 encoded. " +
+        "Set it locally with: dotnet user-secrets set \"Otp:HashingKey\" \"<a long random string>\" " +
+        "(see docs/development-setup.md).")
+    .ValidateOnStart();
+
+builder.Services.AddScoped<IOtpService, OtpService>();
+
+// The only IOtpSender this phase ships is a development/test aid that logs the code rather
+// than sending a real SMS (see DevelopmentOtpSender's own comments for why that is safe).
+// Any environment other than Development/Testing must bring its own real implementation -
+// failing fast here at startup is far safer than silently logging real codes in production
+// because nobody registered a proper sender.
+if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing"))
+{
+    builder.Services.AddSingleton<IOtpSender, DevelopmentOtpSender>();
+}
+else
+{
+    throw new InvalidOperationException(
+        "No production IOtpSender is registered. DevelopmentOtpSender (which logs codes) is " +
+        "only ever wired up for Development and Testing. Implement IOtpSender against a real " +
+        "SMS provider and register it here before running Phase 3 in this environment.");
+}
+
+// Two fixed-window limiters, both partitioned by caller IP address: an anonymous endpoint
+// has no authenticated identity to partition by, and IP is the best signal available before
+// OtpService's own per-account cooldown (see OtpOptions.ResendCooldownSeconds) takes over as
+// a second, identity-scoped layer of defence. Verify gets a looser limit than Request - a
+// legitimate caller retries a mistyped code far more often than they legitimately ask for a
+// brand new one - but per-OTP attempt counting (see OtpService) is what actually bounds
+// brute-forcing a single code; this limiter's job is only to blunt a high-volume attacker.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    OtpOptions otpOptions = builder.Configuration.GetSection(OtpOptions.SectionName).Get<OtpOptions>()
+        ?? new OtpOptions { HashingKey = string.Empty };
+
+    options.AddPolicy(RateLimiterPolicies.OtpRequest, httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: GetPartitionKey(httpContext),
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = otpOptions.RequestRateLimit.PermitLimit,
+                Window = TimeSpan.FromSeconds(otpOptions.RequestRateLimit.WindowSeconds),
+                QueueLimit = 0,
+            }));
+
+    options.AddPolicy(RateLimiterPolicies.OtpVerify, httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: GetPartitionKey(httpContext),
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = otpOptions.VerifyRateLimit.PermitLimit,
+                Window = TimeSpan.FromSeconds(otpOptions.VerifyRateLimit.WindowSeconds),
+                QueueLimit = 0,
+            }));
+});
+
+static string GetPartitionKey(HttpContext httpContext) =>
+    httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+// ---------------------------------------------------------------------------
 // Health checks, OpenAPI
 // ---------------------------------------------------------------------------
 
@@ -177,6 +251,7 @@ else
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 // ---------------------------------------------------------------------------
 // Endpoints
@@ -201,6 +276,7 @@ app.MapHealthChecks(ApiRoutes.HealthReady, new HealthCheckOptions
 
 app.MapSystemEndpoints();
 app.MapAuthEndpoints();
+app.MapOtpEndpoints();
 
 app.Run();
 
