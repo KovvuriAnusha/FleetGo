@@ -24,23 +24,29 @@ than a collection of disconnected demos.
 | Phase | Scope | State |
 |-------|-------|-------|
 | 1 | Solution foundation: projects, DI, OpenAPI, health checks, landing page, tests, CI | ✅ Complete |
-| 2 | Authentication: JWT + refresh tokens, EF Core + SQL Server, secure token storage | ⏭️ Next |
+| 2 | Authentication: JWT + refresh tokens, EF Core + SQL Server, secure token storage | 🔧 Implemented, pending build/test verification |
 | 3+ | Routes, stops, offline-first sync, location tracking, proof of delivery, payments | 📋 Planned |
 
-The full plan is in [docs/roadmap.md](docs/roadmap.md).
+The full plan is in [docs/roadmap.md](docs/roadmap.md). Phase 2's code was written in an
+environment without a reachable .NET SDK, so it has not yet been compiled, run, or tested - see
+that phase's pull request notes for what to verify locally before merging.
 
 ---
 
 ## Technology
 
 **Mobile** — .NET 10, .NET MAUI 10, C#, XAML, MVVM (CommunityToolkit.Mvvm), dependency injection,
-Shell navigation, compiled bindings.
+Shell navigation, compiled bindings. `FleetGo.Mobile.Core` (added in Phase 2) holds view models and
+session/token logic in a plain, MAUI-free library so they run under regular unit tests.
 
-**Backend** — ASP.NET Core 10 Minimal APIs, OpenAPI (Scalar UI), health checks, RFC 9457
-`problem+json` error responses. Entity Framework Core and SQL Server arrive in Phase 2.
+**Backend** — ASP.NET Core 10 Minimal APIs, OpenAPI (Scalar UI), health checks (including a
+readiness check against the database), RFC 9457 `problem+json` error responses. Entity Framework
+Core with the SQL Server provider, JWT bearer authentication, and rotating refresh tokens were
+added in Phase 2.
 
 **Testing** — xUnit v3; integration tests that boot the real API host in memory through
-`WebApplicationFactory`, plus unit tests for the client-side code.
+`WebApplicationFactory` (SQLite in-memory for anything that touches the database), plus unit tests
+for the client-side code, including the Phase 2 view models and session/token handling.
 
 ---
 
@@ -51,6 +57,7 @@ FleetGo/
 ├── src/
 │   ├── FleetGo.Shared/        Contracts, routes, JSON settings and the typed API client
 │   ├── FleetGo.API/           ASP.NET Core Web API host
+│   ├── FleetGo.Mobile.Core/   View models and session/token logic (no MAUI dependency)
 │   └── FleetGo.Mobile/        .NET MAUI app (Android, iOS, Mac Catalyst)
 ├── tests/
 │   ├── FleetGo.API.Tests/     In-memory integration tests for the API
@@ -62,7 +69,7 @@ FleetGo/
 └── FleetGo.sln
 ```
 
-Three source projects, two test projects, and no layer that exists only to satisfy a diagram.
+Four source projects, two test projects, and no layer that exists only to satisfy a diagram.
 The reasoning behind each one is written up in [docs/architecture.md](docs/architecture.md).
 
 ---
@@ -75,8 +82,14 @@ The reasoning behind each one is written up in [docs/architecture.md](docs/archi
 - .NET MAUI workloads: `dotnet workload install maui`
 - For Android: JDK 17 and the Android SDK (installed with Visual Studio or Android Studio)
 - For iOS / Mac Catalyst: macOS with Xcode
+- SQL Server, for Phase 2 onward - see [docs/development-setup.md](docs/development-setup.md#database)
 
 ### Run the API
+
+As of Phase 2 the API needs a JWT signing key and a database connection string configured via
+`dotnet user-secrets` before it will start - see
+[docs/development-setup.md](docs/development-setup.md#required-local-configuration-phase-2) for the
+exact commands.
 
 ```bash
 dotnet run --project src/FleetGo.API
@@ -101,9 +114,9 @@ dotnet build src/FleetGo.Mobile -t:Run -f net10.0-ios
 dotnet build src/FleetGo.Mobile -t:Run -f net10.0-maccatalyst
 ```
 
-Start the API first: the landing page calls it on appearing and reports whether it is reachable.
-The Android emulator reaches the host machine at `10.0.2.2`, not `localhost` - see
-[docs/development-setup.md](docs/development-setup.md) if the app cannot connect.
+Start the API first: the app signs in against it, and the Phase 1 landing page still reports
+whether it is reachable. The Android emulator reaches the host machine at `10.0.2.2`, not
+`localhost` - see [docs/development-setup.md](docs/development-setup.md) if the app cannot connect.
 
 ### Run the tests
 
@@ -121,3 +134,4 @@ path is passed as `--project` rather than positionally.
 ## License
 
 [MIT](LICENSE) © 2026 Anusha Kovvuri
+

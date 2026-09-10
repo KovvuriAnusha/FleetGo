@@ -1,3 +1,5 @@
+using FleetGo.Mobile.Views;
+
 namespace FleetGo.Mobile;
 
 public partial class AppShell : Shell
@@ -6,7 +8,11 @@ public partial class AppShell : Shell
     {
         InitializeComponent();
 
-        // Detail routes that are pushed rather than tabbed get registered here,
-        // e.g. Routing.RegisterRoute("stops/detail", typeof(StopDetailPage));
+        // Detail routes that are pushed/absolute-navigated rather than tabbed get
+        // registered here. HomePage is reached only after authentication (see
+        // LoginPage.xaml.cs and HomePage.xaml.cs), never as a tab a signed-out driver
+        // could switch to directly.
+        Routing.RegisterRoute("home", typeof(HomePage));
     }
 }
+

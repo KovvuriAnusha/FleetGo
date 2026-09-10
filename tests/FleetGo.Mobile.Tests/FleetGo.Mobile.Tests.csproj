@@ -4,10 +4,11 @@
     Unit tests for the client-side code the mobile app depends on.
 
     This project targets plain net10.0 rather than a platform head, so it runs on
-    any machine and in CI without an emulator. It therefore references
-    FleetGo.Shared - the platform-independent half of the mobile stack - which is
-    where the typed API client and serialisation live. View model tests join this
-    project once view models exist (see docs/architecture.md).
+    any machine and in CI without an emulator. It references FleetGo.Shared - the
+    platform-independent half of the mobile stack, where the typed API client and
+    serialisation live - and, since Phase 2, FleetGo.Mobile.Core, which holds
+    LoginViewModel and the session/authentication logic (see that project's own
+    comments, and docs/architecture.md's "Known gap: view model tests", for why).
 
     Test runner: Microsoft.Testing.Platform, same as FleetGo.API.Tests.
   -->
@@ -28,6 +29,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\FleetGo.Shared\FleetGo.Shared.csproj" />
+    <ProjectReference Include="..\..\src\FleetGo.Mobile.Core\FleetGo.Mobile.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -35,3 +37,4 @@
   </ItemGroup>
 
 </Project>
+

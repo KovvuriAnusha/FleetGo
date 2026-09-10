@@ -24,4 +24,20 @@ public static class ApiRoutes
 
     /// <summary>Readiness probe - can the API serve traffic right now?</summary>
     public const string HealthReady = "/health/ready";
+
+    /// <summary>Base path for authentication endpoints.</summary>
+    public const string AuthBase = Base + "/auth";
+
+    /// <summary>Exchanges an email/password pair for an access and refresh token.</summary>
+    public const string AuthLogin = AuthBase + "/login";
+
+    /// <summary>Exchanges a valid, unexpired refresh token for a new token pair.</summary>
+    public const string AuthRefresh = AuthBase + "/refresh";
+
+    /// <summary>Revokes a refresh token so it can no longer be used.</summary>
+    public const string AuthLogout = AuthBase + "/logout";
+
+    /// <summary>Returns the profile of the currently authenticated user.</summary>
+    public const string AuthMe = AuthBase + "/me";
 }
+

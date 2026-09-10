@@ -9,9 +9,16 @@
         Shell owns navigation for the whole app: it gives us URI-based routes
         ("//home", "stops/detail?id=42"), which is what deep links from push
         notifications will resolve against in a later phase.
+
+        LoginPage is the only ShellContent, and therefore the app's root - there is
+        deliberately no tab bar to switch to Home without signing in. HomePage is
+        registered as a route instead (see AppShell.xaml.cs) and reached only via
+        GoToAsync after LoginViewModel.LoginSucceeded fires or a stored session is
+        restored on launch (LoginPage.OnAppearing).
     -->
-    <ShellContent Title="Home"
-                  ContentTemplate="{DataTemplate views:HomePage}"
-                  Route="home" />
+    <ShellContent Title="Sign in"
+                  ContentTemplate="{DataTemplate views:LoginPage}"
+                  Route="login" />
 
 </Shell>
+

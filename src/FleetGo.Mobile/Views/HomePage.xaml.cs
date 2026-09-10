@@ -16,6 +16,8 @@ public partial class HomePage : ContentPage
 
         _viewModel = viewModel;
         BindingContext = viewModel;
+
+        _viewModel.SignedOut += OnSignedOut;
     }
 
     protected override void OnAppearing()
@@ -29,4 +31,7 @@ public partial class HomePage : ContentPage
             _viewModel.CheckApiCommand.Execute(null);
         }
     }
+
+    private async void OnSignedOut(object? sender, EventArgs e) => await Shell.Current.GoToAsync("//login");
 }
+

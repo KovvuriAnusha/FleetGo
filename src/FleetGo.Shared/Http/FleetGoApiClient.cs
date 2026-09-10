@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using FleetGo.Shared.Contracts;
+using FleetGo.Shared.Contracts.Auth;
 using FleetGo.Shared.Serialization;
 
 namespace FleetGo.Shared.Http;
@@ -40,6 +41,55 @@ public sealed class FleetGoApiClient : IFleetGoApiClient
             cancellationToken,
             HttpStatusCode.ServiceUnavailable);
 
+    /// <inheritdoc />
+    public Task<TokenResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default) =>
+        PostAsync(
+            ApiRoutes.AuthLogin,
+            request,
+            FleetGoJsonSerializerContext.Default.LoginRequest,
+            FleetGoJsonSerializerContext.Default.TokenResponse,
+            cancellationToken,
+            // There is no session yet to attach a token from, and this call must never
+            // itself trigger IAccessTokenProvider's own refresh logic.
+            skipAuthentication: true);
+
+    /// <inheritdoc />
+    public Task<TokenResponse> RefreshTokenAsync(RefreshTokenRequest request, CancellationToken cancellationToken = default) =>
+        PostAsync(
+            ApiRoutes.AuthRefresh,
+            request,
+            FleetGoJsonSerializerContext.Default.RefreshTokenRequest,
+            FleetGoJsonSerializerContext.Default.TokenResponse,
+            cancellationToken,
+            // Refreshing is how a new access token is obtained - it cannot depend on one
+            // already being present, or a token provider that refreshes-on-demand would
+            // call straight back into this method.
+            skipAuthentication: true);
+
+    /// <inheritdoc />
+    public async Task LogoutAsync(LogoutRequest request, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage httpRequest = new(HttpMethod.Post, ApiRoutes.AuthLogout)
+        {
+            Content = JsonContent.Create(request, FleetGoJsonSerializerContext.Default.LogoutRequest),
+        };
+
+        using HttpResponseMessage response = await _httpClient
+            .SendAsync(httpRequest, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new FleetGoApiException(
+                $"POST {ApiRoutes.AuthLogout} failed with HTTP {(int)response.StatusCode} ({response.ReasonPhrase}).",
+                response.StatusCode);
+        }
+    }
+
+    /// <inheritdoc />
+    public Task<CurrentUserResponse> GetCurrentUserAsync(CancellationToken cancellationToken = default) =>
+        GetAsync(ApiRoutes.AuthMe, FleetGoJsonSerializerContext.Default.CurrentUserResponse, cancellationToken);
+
     private async Task<T> GetAsync<T>(
         string route,
         JsonTypeInfo<T> typeInfo,
@@ -51,10 +101,51 @@ public sealed class FleetGoApiClient : IFleetGoApiClient
             .GetAsync(route, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
             .ConfigureAwait(false);
 
+        return await ReadBodyAsync("GET", route, response, typeInfo, cancellationToken, alsoAcceptable)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<TResponse> PostAsync<TRequest, TResponse>(
+        string route,
+        TRequest body,
+        JsonTypeInfo<TRequest> requestTypeInfo,
+        JsonTypeInfo<TResponse> responseTypeInfo,
+        CancellationToken cancellationToken,
+        bool skipAuthentication = false,
+        params HttpStatusCode[] alsoAcceptable)
+        where TResponse : class
+    {
+        using HttpRequestMessage httpRequest = new(HttpMethod.Post, route)
+        {
+            Content = JsonContent.Create(body, requestTypeInfo),
+        };
+
+        if (skipAuthentication)
+        {
+            httpRequest.Options.Set(FleetGoHttpRequestOptions.SkipAuthentication, true);
+        }
+
+        using HttpResponseMessage response = await _httpClient
+            .SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+
+        return await ReadBodyAsync("POST", route, response, responseTypeInfo, cancellationToken, alsoAcceptable)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<T> ReadBodyAsync<T>(
+        string method,
+        string route,
+        HttpResponseMessage response,
+        JsonTypeInfo<T> typeInfo,
+        CancellationToken cancellationToken,
+        HttpStatusCode[] alsoAcceptable)
+        where T : class
+    {
         if (!response.IsSuccessStatusCode && Array.IndexOf(alsoAcceptable, response.StatusCode) < 0)
         {
             throw new FleetGoApiException(
-                $"GET {route} failed with HTTP {(int)response.StatusCode} ({response.ReasonPhrase}).",
+                $"{method} {route} failed with HTTP {(int)response.StatusCode} ({response.ReasonPhrase}).",
                 response.StatusCode);
         }
 
@@ -65,15 +156,16 @@ public sealed class FleetGoApiClient : IFleetGoApiClient
                 .ConfigureAwait(false);
 
             return payload ?? throw new FleetGoApiException(
-                $"GET {route} returned an empty body.",
+                $"{method} {route} returned an empty body.",
                 response.StatusCode);
         }
         catch (Exception ex) when (ex is JsonException or NotSupportedException)
         {
             throw new FleetGoApiException(
-                $"GET {route} returned a body that could not be read as {typeof(T).Name}.",
+                $"{method} {route} returned a body that could not be read as {typeof(T).Name}.",
                 response.StatusCode,
                 ex);
         }
     }
 }
+

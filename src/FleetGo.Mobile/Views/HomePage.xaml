@@ -95,7 +95,19 @@
                     HorizontalOptions="Fill"
                     SemanticProperties.Hint="Calls the FleetGo API and reports whether it is reachable" />
 
+            <!-- Session -->
+            <Grid ColumnDefinitions="*,Auto" Margin="0,12,0,0">
+                <Label Grid.Column="0"
+                       Text="{Binding SignedInAsText}"
+                       VerticalOptions="Center"
+                       LineBreakMode="TailTruncation" />
+                <Button Grid.Column="1"
+                        Text="Sign out"
+                        Command="{Binding SignOutCommand}" />
+            </Grid>
+
         </VerticalStackLayout>
     </ScrollView>
 
 </ContentPage>
+

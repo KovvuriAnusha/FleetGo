@@ -1,10 +1,14 @@
 using FleetGo.Mobile.Configuration;
+using FleetGo.Mobile.Core.Session;
+using FleetGo.Mobile.Core.ViewModels;
+using FleetGo.Mobile.Services;
 using FleetGo.Mobile.ViewModels;
 using FleetGo.Mobile.Views;
 using FleetGo.Shared.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Maui.Networking;
+using Microsoft.Maui.Storage;
 
 namespace FleetGo.Mobile;
 
@@ -28,6 +32,7 @@ public static class MauiProgram
             });
 
         RegisterAppServices(builder.Services);
+        RegisterAuthenticationServices(builder.Services);
         RegisterViewsAndViewModels(builder.Services);
 
 #if DEBUG
@@ -48,16 +53,36 @@ public static class MauiProgram
         // MAUI Essentials singletons are registered as interfaces so view models
         // depend on abstractions, not on static Current properties.
         services.AddSingleton(Connectivity.Current);
+        services.AddSingleton(SecureStorage.Default);
+
+        // BearerTokenHandler attaches the current access token (via IAccessTokenProvider,
+        // registered below) to every request the typed client makes. Transient by
+        // convention for HttpMessageHandlers registered with AddHttpMessageHandler.
+        services.AddTransient<BearerTokenHandler>();
 
         // Typed client over IHttpClientFactory: the factory pools and recycles the
         // underlying handlers (a raw long-lived HttpClient misses DNS changes; a
         // new one per call exhausts sockets). It is also the seam where retry,
         // timeout and circuit-breaker policies plug in later.
         services.AddHttpClient<IFleetGoApiClient, FleetGoApiClient>(client =>
-        {
-            client.BaseAddress = apiSettings.BaseAddress;
-            client.Timeout = apiSettings.Timeout;
-        });
+            {
+                client.BaseAddress = apiSettings.BaseAddress;
+                client.Timeout = apiSettings.Timeout;
+            })
+            .AddHttpMessageHandler<BearerTokenHandler>();
+    }
+
+    private static void RegisterAuthenticationServices(IServiceCollection services)
+    {
+        services.AddSingleton<ISecureTokenStore, SecureTokenStore>();
+
+        // AuthenticationService implements both IAuthenticationService (what the UI
+        // talks to) and IAccessTokenProvider (what BearerTokenHandler talks to) - the
+        // same singleton instance is exposed under both interfaces so there is exactly
+        // one in-memory record of the current session, not two that could drift apart.
+        services.AddSingleton<AuthenticationService>();
+        services.AddSingleton<IAuthenticationService>(sp => sp.GetRequiredService<AuthenticationService>());
+        services.AddSingleton<IAccessTokenProvider>(sp => sp.GetRequiredService<AuthenticationService>());
     }
 
     private static void RegisterViewsAndViewModels(IServiceCollection services)
@@ -66,5 +91,11 @@ public static class MauiProgram
         // page from this container, and the page takes its view model by constructor.
         services.AddSingleton<HomeViewModel>();
         services.AddSingleton<HomePage>();
+
+        // Transient rather than singleton: a fresh LoginViewModel (empty form, no stale
+        // error message) every time LoginPage is navigated to, e.g. after signing out.
+        services.AddTransient<LoginViewModel>();
+        services.AddTransient<LoginPage>();
     }
 }
+

@@ -25,6 +25,16 @@
   <ItemGroup>
     <PackageReference Include="xunit.v3" Version="4.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.12" />
+    <!--
+      Test-only database provider. The real host uses SQL Server (see
+      FleetGo.API/Program.cs); these tests swap in an open, in-memory SQLite
+      connection (FleetGoApiFactory) so they exercise real relational behaviour -
+      constraints, indexes, generated SQL - without requiring a SQL Server instance
+      in CI or on a contributor's machine. The EF Core InMemory provider was
+      deliberately not used here: it does not enforce unique indexes or foreign
+      keys, which is exactly the behaviour these tests need to trust.
+    -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.12" />
   </ItemGroup>
 
   <ItemGroup>
@@ -36,3 +46,4 @@
   </ItemGroup>
 
 </Project>
+
