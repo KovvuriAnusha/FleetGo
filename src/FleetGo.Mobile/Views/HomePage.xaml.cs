@@ -34,6 +34,9 @@ public partial class HomePage : ContentPage
 
     private async void OnSignedOut(object? sender, EventArgs e) => await Shell.Current.GoToAsync("//login");
 
+    private async void OnOpenDashboard(object? sender, EventArgs e) =>
+        await Shell.Current.GoToAsync(DashboardPage.RouteName);
+
     /// <summary>
     /// The Switch's IsToggled is bound one-way from <see cref="HomeViewModel.IsBiometricUnlockEnabled"/>,
     /// so this handler fires both when a driver flips the switch AND when the view model updates the

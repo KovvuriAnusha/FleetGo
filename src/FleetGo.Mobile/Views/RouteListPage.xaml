@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:viewmodels="clr-namespace:FleetGo.Mobile.Core.ViewModels;assembly=FleetGo.Mobile.Core"
+             xmlns:fleet="clr-namespace:FleetGo.Shared.Contracts.Fleet;assembly=FleetGo.Shared"
+             x:Class="FleetGo.Mobile.Views.RouteListPage"
+             x:DataType="viewmodels:RouteListViewModel"
+             Title="My routes">
+
+    <Grid RowDefinitions="Auto,Auto,*" Padding="16,12">
+
+        <!-- Filter -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="0,0,0,8">
+            <Label Grid.Column="0" Text="Show" VerticalOptions="Center" />
+            <Picker Grid.Column="1"
+                    ItemsSource="{Binding StatusFilterOptions}"
+                    ItemDisplayBinding="{Binding Label, x:DataType=viewmodels:RouteStatusFilterOption}"
+                    SelectedItem="{Binding SelectedStatusFilter}"
+                    SelectedIndexChanged="OnStatusFilterChanged"
+                    SemanticProperties.Hint="Filter routes by status" />
+        </Grid>
+
+        <!-- Error, with retry -->
+        <Border Grid.Row="1"
+                IsVisible="{Binding HasErrorMessage}"
+                Padding="16"
+                Margin="0,0,0,8"
+                StrokeThickness="1"
+                Stroke="{StaticResource Danger}"
+                BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource Gray950}}">
+            <Border.StrokeShape>
+                <RoundRectangle CornerRadius="12" />
+            </Border.StrokeShape>
+            <VerticalStackLayout Spacing="12">
+                <Label Text="{Binding ErrorMessage}" LineBreakMode="WordWrap" />
+                <Button Text="Try again" Command="{Binding LoadCommand}" HorizontalOptions="Start" />
+            </VerticalStackLayout>
+        </Border>
+
+        <Grid Grid.Row="2">
+
+            <!-- Loading -->
+            <ActivityIndicator IsRunning="{Binding IsBusy}"
+                               IsVisible="{Binding IsBusy}"
+                               VerticalOptions="Start"
+                               HorizontalOptions="Center" />
+
+            <!-- Empty -->
+            <VerticalStackLayout IsVisible="{Binding IsEmpty}"
+                                 Spacing="6"
+                                 Padding="8,24"
+                                 VerticalOptions="Start">
+                <Label Text="No routes to show" FontAttributes="Bold" HorizontalOptions="Center" />
+                <Label Text="Nothing matches this filter yet. Pull down to refresh."
+                       TextColor="{StaticResource Gray500}"
+                       HorizontalOptions="Center"
+                       HorizontalTextAlignment="Center"
+                       LineBreakMode="WordWrap" />
+            </VerticalStackLayout>
+
+            <!-- Routes -->
+            <RefreshView IsRefreshing="{Binding IsRefreshing}" Command="{Binding RefreshCommand}">
+                <CollectionView ItemsSource="{Binding Routes}"
+                                SelectionMode="Single"
+                                SelectionChanged="OnRouteSelected"
+                                RemainingItemsThreshold="4"
+                                RemainingItemsThresholdReachedCommand="{Binding LoadMoreCommand}">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="fleet:RouteResponse">
+                            <Border Padding="14"
+                                    Margin="0,4"
+                                    StrokeThickness="1"
+                                    Stroke="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray600}}"
+                                    BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource Gray950}}">
+                                <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="12" />
+                                </Border.StrokeShape>
+
+                                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="2">
+                                    <Label Grid.Row="0" Grid.Column="0"
+                                           Text="{Binding RouteNumber}"
+                                           FontAttributes="Bold" />
+                                    <Label Grid.Row="0" Grid.Column="1"
+                                           Text="{Binding Status}"
+                                           TextColor="{StaticResource Primary}" />
+
+                                    <Label Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                                           Text="{Binding RouteDate, StringFormat='{}{0:ddd d MMM yyyy}'}"
+                                           TextColor="{StaticResource Gray500}" />
+
+                                    <Label Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
+                                           Text="{Binding StopCount, StringFormat='{}{0} stops'}"
+                                           TextColor="{StaticResource Gray500}" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+            </RefreshView>
+
+            <!-- Appending the next page -->
+            <ActivityIndicator IsRunning="{Binding IsLoadingMore}"
+                               IsVisible="{Binding IsLoadingMore}"
+                               VerticalOptions="End"
+                               HorizontalOptions="Center"
+                               Margin="0,0,0,8" />
+        </Grid>
+    </Grid>
+
+</ContentPage>

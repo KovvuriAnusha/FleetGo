@@ -62,7 +62,8 @@ internal sealed class FakeAuthenticationService : IAuthenticationService
 
     public bool IsAuthenticated { get; private set; }
 
-    public CurrentUserResponse? CurrentUser => null;
+    /// <summary>Settable so a test can stand up a signed-in profile - DashboardViewModel reads this to greet the driver.</summary>
+    public CurrentUserResponse? CurrentUser { get; set; }
 
     public Task<AuthResult> LoginAsync(string email, string password, CancellationToken cancellationToken = default)
     {

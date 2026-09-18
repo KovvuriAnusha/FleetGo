@@ -14,6 +14,13 @@ public partial class AppShell : Shell
         // could switch to directly.
         Routing.RegisterRoute("home", typeof(HomePage));
         Routing.RegisterRoute("otp-verify", typeof(OtpVerificationPage));
+
+        // Phase 4B driver screens. Each page owns its own route name so a navigation call
+        // and the registration can never drift apart.
+        Routing.RegisterRoute(DashboardPage.RouteName, typeof(DashboardPage));
+        Routing.RegisterRoute(RouteListPage.RouteName, typeof(RouteListPage));
+        Routing.RegisterRoute(RouteDetailPage.RouteName, typeof(RouteDetailPage));
+        Routing.RegisterRoute(StopDetailPage.RouteName, typeof(StopDetailPage));
     }
 }
 

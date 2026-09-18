@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:viewmodels="clr-namespace:FleetGo.Mobile.Core.ViewModels;assembly=FleetGo.Mobile.Core"
+             xmlns:fleet="clr-namespace:FleetGo.Shared.Contracts.Fleet;assembly=FleetGo.Shared"
+             x:Class="FleetGo.Mobile.Views.DashboardPage"
+             x:DataType="viewmodels:DashboardViewModel"
+             Title="Dashboard">
+
+    <RefreshView IsRefreshing="{Binding IsRefreshing}" Command="{Binding RefreshCommand}">
+        <ScrollView>
+            <VerticalStackLayout Padding="24,24" Spacing="20">
+
+                <VerticalStackLayout Spacing="2">
+                    <Label Text="{Binding DriverName, StringFormat='Hello, {0}'}"
+                           Style="{StaticResource Headline}"
+                           SemanticProperties.HeadingLevel="Level1" />
+                    <Label Text="{Binding TodayLabel}" Style="{StaticResource SubHeadline}" />
+                    <Label Text="{Binding DriverCode, StringFormat='Driver {0}'}"
+                           IsVisible="{Binding HasDriverCode}"
+                           TextColor="{StaticResource Gray500}" />
+                </VerticalStackLayout>
+
+                <!-- Loading -->
+                <ActivityIndicator IsRunning="{Binding IsBusy}"
+                                   IsVisible="{Binding IsBusy}"
+                                   HorizontalOptions="Center" />
+
+                <!-- Error, with retry -->
+                <Border IsVisible="{Binding HasErrorMessage}"
+                        Padding="16"
+                        StrokeThickness="1"
+                        Stroke="{StaticResource Danger}"
+                        BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource Gray950}}">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="12" />
+                    </Border.StrokeShape>
+                    <VerticalStackLayout Spacing="12">
+                        <Label Text="{Binding ErrorMessage}" LineBreakMode="WordWrap" />
+                        <Button Text="Try again" Command="{Binding LoadCommand}" HorizontalOptions="Start" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- Today at a glance -->
+                <Border Padding="16"
+                        IsVisible="{Binding IsNotBusy}"
+                        StrokeThickness="1"
+                        Stroke="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray600}}"
+                        BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource Gray950}}">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="12" />
+                    </Border.StrokeShape>
+
+                    <Grid ColumnDefinitions="*,*,*,*" RowDefinitions="Auto,Auto" RowSpacing="4">
+                        <Label Grid.Row="0" Grid.Column="0" Text="{Binding PlannedCount}" Style="{StaticResource Headline}" HorizontalOptions="Center" />
+                        <Label Grid.Row="1" Grid.Column="0" Text="Planned" HorizontalOptions="Center" TextColor="{StaticResource Gray500}" />
+
+                        <Label Grid.Row="0" Grid.Column="1" Text="{Binding InProgressCount}" Style="{StaticResource Headline}" HorizontalOptions="Center" />
+                        <Label Grid.Row="1" Grid.Column="1" Text="Active" HorizontalOptions="Center" TextColor="{StaticResource Gray500}" />
+
+                        <Label Grid.Row="0" Grid.Column="2" Text="{Binding CompletedCount}" Style="{StaticResource Headline}" HorizontalOptions="Center" />
+                        <Label Grid.Row="1" Grid.Column="2" Text="Done" HorizontalOptions="Center" TextColor="{StaticResource Gray500}" />
+
+                        <Label Grid.Row="0" Grid.Column="3" Text="{Binding StopsToday}" Style="{StaticResource Headline}" HorizontalOptions="Center" />
+                        <Label Grid.Row="1" Grid.Column="3" Text="Stops" HorizontalOptions="Center" TextColor="{StaticResource Gray500}" />
+                    </Grid>
+                </Border>
+
+                <!-- Next route to work -->
+                <Border Padding="16"
+                        IsVisible="{Binding HasActiveRoute}"
+                        StrokeThickness="1"
+                        Stroke="{StaticResource Primary}"
+                        BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource Gray950}}">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="12" />
+                    </Border.StrokeShape>
+
+                    <VerticalStackLayout Spacing="8" x:DataType="viewmodels:DashboardViewModel">
+                        <Label Text="Up next" TextColor="{StaticResource Gray500}" />
+                        <Label Text="{Binding ActiveRoute.RouteNumber}" Style="{StaticResource Headline}" />
+                        <Label Text="{Binding ActiveRoute.Status}" />
+                        <Label Text="{Binding ActiveRoute.StopCount, StringFormat='{}{0} stops'}" TextColor="{StaticResource Gray500}" />
+                        <Button Text="Open route"
+                                Clicked="OnOpenActiveRoute"
+                                HorizontalOptions="Start"
+                                Margin="0,4,0,0" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- Empty state -->
+                <Border IsVisible="{Binding HasNoRoutesToday}"
+                        Padding="16"
+                        StrokeThickness="1"
+                        Stroke="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray600}}"
+                        BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource Gray950}}">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="12" />
+                    </Border.StrokeShape>
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Nothing scheduled today" FontAttributes="Bold" />
+                        <Label Text="No routes are assigned to you for today. Pull down to refresh, or browse all of your routes."
+                               TextColor="{StaticResource Gray500}"
+                               LineBreakMode="WordWrap" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- Today's routes -->
+                <Label Text="Today's routes"
+                       FontAttributes="Bold"
+                       IsVisible="{Binding IsNotBusy}"
+                       Margin="0,8,0,0" />
+
+                <CollectionView ItemsSource="{Binding TodayRoutes}"
+                                SelectionMode="Single"
+                                SelectionChanged="OnRouteSelected"
+                                HeightRequest="240">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="fleet:RouteResponse">
+                            <Grid Padding="4,10" ColumnDefinitions="*,Auto">
+                                <VerticalStackLayout Grid.Column="0" Spacing="2">
+                                    <Label Text="{Binding RouteNumber}" FontAttributes="Bold" />
+                                    <Label Text="{Binding StopCount, StringFormat='{}{0} stops'}"
+                                           TextColor="{StaticResource Gray500}" />
+                                </VerticalStackLayout>
+                                <Label Grid.Column="1"
+                                       Text="{Binding Status}"
+                                       VerticalOptions="Center"
+                                       TextColor="{StaticResource Primary}" />
+                            </Grid>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+                <Button Text="View all routes"
+                        Command="{Binding ViewAllRoutesCommand}"
+                        HorizontalOptions="Fill" />
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </RefreshView>
+
+</ContentPage>

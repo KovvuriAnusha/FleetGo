@@ -1,9 +1,11 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using FleetGo.Shared.Contracts;
 using FleetGo.Shared.Contracts.Auth;
+using FleetGo.Shared.Contracts.Fleet;
 using FleetGo.Shared.Serialization;
 
 namespace FleetGo.Shared.Http;
@@ -109,6 +111,105 @@ public sealed class FleetGoApiClient : IFleetGoApiClient
             FleetGoJsonSerializerContext.Default.TokenResponse,
             cancellationToken,
             skipAuthentication: true);
+
+    /// <inheritdoc />
+    public Task<PagedResponse<RouteResponse>> GetRoutesAsync(
+        int page = 1,
+        int pageSize = 20,
+        RouteStatus? status = null,
+        DateOnly? routeDate = null,
+        string? sort = null,
+        CancellationToken cancellationToken = default) =>
+        GetAsync(
+            ApiRoutes.RoutesBase + BuildQuery(
+                ("page", page.ToString(CultureInfo.InvariantCulture)),
+                ("pageSize", pageSize.ToString(CultureInfo.InvariantCulture)),
+                ("status", status?.ToString()),
+                ("routeDate", routeDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+                ("sort", sort)),
+            FleetGoJsonSerializerContext.Default.PagedResponseRouteResponse,
+            cancellationToken);
+
+    /// <inheritdoc />
+    public Task<RouteResponse> GetRouteAsync(Guid routeId, CancellationToken cancellationToken = default) =>
+        GetAsync(
+            $"{ApiRoutes.RoutesBase}/{routeId}",
+            FleetGoJsonSerializerContext.Default.RouteResponse,
+            cancellationToken);
+
+    /// <inheritdoc />
+    public Task<PagedResponse<StopResponse>> GetStopsAsync(
+        Guid? routeId = null,
+        int page = 1,
+        int pageSize = 20,
+        StopStatus? status = null,
+        string? search = null,
+        string? sort = null,
+        CancellationToken cancellationToken = default) =>
+        GetAsync(
+            ApiRoutes.StopsBase + BuildQuery(
+                ("routeId", routeId?.ToString()),
+                ("page", page.ToString(CultureInfo.InvariantCulture)),
+                ("pageSize", pageSize.ToString(CultureInfo.InvariantCulture)),
+                ("status", status?.ToString()),
+                ("search", search),
+                ("sort", sort)),
+            FleetGoJsonSerializerContext.Default.PagedResponseStopResponse,
+            cancellationToken);
+
+    /// <inheritdoc />
+    public Task<StopResponse> GetStopAsync(Guid stopId, CancellationToken cancellationToken = default) =>
+        GetAsync(
+            $"{ApiRoutes.StopsBase}/{stopId}",
+            FleetGoJsonSerializerContext.Default.StopResponse,
+            cancellationToken);
+
+    /// <inheritdoc />
+    public Task<PagedResponse<PackageResponse>> GetPackagesAsync(
+        Guid? stopId = null,
+        int page = 1,
+        int pageSize = 20,
+        PackageStatus? status = null,
+        string? search = null,
+        CancellationToken cancellationToken = default) =>
+        GetAsync(
+            ApiRoutes.PackagesBase + BuildQuery(
+                ("stopId", stopId?.ToString()),
+                ("page", page.ToString(CultureInfo.InvariantCulture)),
+                ("pageSize", pageSize.ToString(CultureInfo.InvariantCulture)),
+                ("status", status?.ToString()),
+                ("search", search)),
+            FleetGoJsonSerializerContext.Default.PagedResponsePackageResponse,
+            cancellationToken);
+
+    /// <inheritdoc />
+    public Task<VehicleResponse> GetVehicleAsync(Guid vehicleId, CancellationToken cancellationToken = default) =>
+        GetAsync(
+            $"{ApiRoutes.VehiclesBase}/{vehicleId}",
+            FleetGoJsonSerializerContext.Default.VehicleResponse,
+            cancellationToken);
+
+    /// <inheritdoc />
+    public Task<CustomerResponse> GetCustomerAsync(Guid customerId, CancellationToken cancellationToken = default) =>
+        GetAsync(
+            $"{ApiRoutes.CustomersBase}/{customerId}",
+            FleetGoJsonSerializerContext.Default.CustomerResponse,
+            cancellationToken);
+
+    /// <summary>
+    /// Builds a query string from the parameters that actually have a value, skipping the
+    /// rest. Values are escaped, so a search term with an ampersand or a space cannot break
+    /// the URL (or smuggle in another parameter).
+    /// </summary>
+    private static string BuildQuery(params (string Key, string? Value)[] parameters)
+    {
+        var pairs = parameters
+            .Where(parameter => !string.IsNullOrWhiteSpace(parameter.Value))
+            .Select(parameter => $"{parameter.Key}={Uri.EscapeDataString(parameter.Value!)}")
+            .ToArray();
+
+        return pairs.Length == 0 ? string.Empty : "?" + string.Join("&", pairs);
+    }
 
     private async Task<T> GetAsync<T>(
         string route,
