@@ -61,10 +61,44 @@ AndroidX Biometric/Play Services API shapes and the two new Android NuGet packag
 
 ## Phase 4 — The working day
 
-- Vehicle, customer, route, stop and package APIs
-- Pagination, filtering and sorting on list endpoints
+### Phase 4A — Fleet operations backend 🔧 Implemented, pending build/test verification
+
+- `Vehicle`, `Customer`, `Route`, `Stop` and `Package` entities, EF Core configuration, and a
+  hand-written `AddFleetOperations` migration - same "no .NET SDK in the authoring environment"
+  situation as Phase 2/3's migrations (see [docs/development-setup.md](development-setup.md#adding-a-migration)).
+  This migration also creates the still-outstanding `OtpCodes` table, a pre-existing gap left over
+  from Phase 3 rather than something new in this phase - see "Known gap surfaced, not introduced,
+  by this phase" in [docs/architecture.md](architecture.md).
+- List/get/create/update Minimal API endpoints for all five entities, with update-only (never
+  destructive-delete) semantics - retiring a vehicle, cancelling a route, or failing a package are
+  status changes, not row deletions.
+- One reusable pagination shape (`{"items", "page", "pageSize", "totalCount", "totalPages"}`) plus
+  the specific, explicit filters and sort options each entity actually needs - not a generic
+  dynamic query engine. See "Pagination" and "Filtering and sorting" in
+  [docs/architecture.md](architecture.md).
+- Authorization and data-isolation rules so a driver can read or change only their own routes,
+  stops and packages - never another driver's, even by guessing or supplying a different id - while
+  vehicles and customers remain shared fleet data any authenticated caller can see. See
+  "Authorization: ownership derived from the token, 404 instead of 403 across drivers" in
+  [docs/architecture.md](architecture.md) for the full rule set.
+- API integration test coverage for all five entities: CRUD, authentication, the authorization
+  rules above (including cross-driver isolation for routes/stops/packages), pagination, filtering,
+  sorting, and validation (required fields, invalid ids, invalid enum values, invalid dates,
+  invalid pagination, duplicate identifiers).
+
+None of this has been compiled, run, or tested in the environment it was authored in - no .NET SDK
+was reachable there, the same constraint noted for Phases 2 and 3 above. See the implementation
+report for the exact verification steps (restore, build, `dotnet ef migrations add AddFleetOperations`
+as a sanity check against the hand-written migration, API tests) a developer needs to run locally
+before treating this phase as done.
+
+### Phase 4B — Driver dashboard and mobile UI
+
 - Driver dashboard, route list, stop detail
 - Search and filter on device
+
+Not started. Depends only on Phase 4A's API, which is implemented above pending the verification
+noted there.
 
 ## Phase 5 — Offline first
 

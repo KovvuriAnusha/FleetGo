@@ -277,6 +277,11 @@ app.MapHealthChecks(ApiRoutes.HealthReady, new HealthCheckOptions
 app.MapSystemEndpoints();
 app.MapAuthEndpoints();
 app.MapOtpEndpoints();
+app.MapVehicleEndpoints();
+app.MapCustomerEndpoints();
+app.MapRouteEndpoints();
+app.MapStopEndpoints();
+app.MapPackageEndpoints();
 
 app.Run();
 

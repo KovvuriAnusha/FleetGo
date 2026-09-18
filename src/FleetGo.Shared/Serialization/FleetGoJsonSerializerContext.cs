@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using FleetGo.Shared.Contracts;
 using FleetGo.Shared.Contracts.Auth;
+using FleetGo.Shared.Contracts.Fleet;
 
 namespace FleetGo.Shared.Serialization;
 
@@ -28,5 +29,25 @@ namespace FleetGo.Shared.Serialization;
 [JsonSerializable(typeof(CurrentUserResponse))]
 [JsonSerializable(typeof(RequestOtpRequest))]
 [JsonSerializable(typeof(VerifyOtpRequest))]
+[JsonSerializable(typeof(VehicleResponse))]
+[JsonSerializable(typeof(CreateVehicleRequest))]
+[JsonSerializable(typeof(UpdateVehicleRequest))]
+[JsonSerializable(typeof(PagedResponse<VehicleResponse>))]
+[JsonSerializable(typeof(CustomerResponse))]
+[JsonSerializable(typeof(CreateCustomerRequest))]
+[JsonSerializable(typeof(UpdateCustomerRequest))]
+[JsonSerializable(typeof(PagedResponse<CustomerResponse>))]
+[JsonSerializable(typeof(RouteResponse))]
+[JsonSerializable(typeof(CreateRouteRequest))]
+[JsonSerializable(typeof(UpdateRouteRequest))]
+[JsonSerializable(typeof(PagedResponse<RouteResponse>))]
+[JsonSerializable(typeof(StopResponse))]
+[JsonSerializable(typeof(CreateStopRequest))]
+[JsonSerializable(typeof(UpdateStopRequest))]
+[JsonSerializable(typeof(PagedResponse<StopResponse>))]
+[JsonSerializable(typeof(PackageResponse))]
+[JsonSerializable(typeof(CreatePackageRequest))]
+[JsonSerializable(typeof(UpdatePackageRequest))]
+[JsonSerializable(typeof(PagedResponse<PackageResponse>))]
 public sealed partial class FleetGoJsonSerializerContext : JsonSerializerContext;
 

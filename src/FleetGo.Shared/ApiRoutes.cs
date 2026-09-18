@@ -48,5 +48,29 @@ public static class ApiRoutes
 
     /// <summary>Exchanges a valid one-time code for an access and refresh token, exactly as a password login does.</summary>
     public const string AuthOtpVerify = AuthOtpBase + "/verify";
+
+    /// <summary>Base path for fleet operations endpoints (vehicles, customers, routes, stops, packages).</summary>
+    public const string FleetBase = Base + "/fleet";
+
+    /// <summary>Base path for vehicle endpoints. A single vehicle is addressed as "{VehiclesBase}/{id}".</summary>
+    public const string VehiclesBase = FleetBase + "/vehicles";
+
+    /// <summary>Base path for customer endpoints. A single customer is addressed as "{CustomersBase}/{id}".</summary>
+    public const string CustomersBase = FleetBase + "/customers";
+
+    /// <summary>Base path for route endpoints. A single route is addressed as "{RoutesBase}/{id}".</summary>
+    public const string RoutesBase = FleetBase + "/routes";
+
+    /// <summary>
+    /// Base path for stop endpoints. A single stop is addressed as "{StopsBase}/{id}"; the
+    /// list endpoint accepts a "routeId" query parameter to scope results to one route.
+    /// </summary>
+    public const string StopsBase = FleetBase + "/stops";
+
+    /// <summary>
+    /// Base path for package endpoints. A single package is addressed as "{PackagesBase}/{id}";
+    /// the list endpoint accepts a "stopId" query parameter to scope results to one stop.
+    /// </summary>
+    public const string PackagesBase = FleetBase + "/packages";
 }
 
