@@ -19,7 +19,7 @@ public sealed class BearerTokenHandlerTests
     public async Task AttachesTheBearerToken_WhenOneIsAvailable()
     {
         StubHttpMessageHandler inner = StubHttpMessageHandler.RespondWith(HttpStatusCode.OK, "{}");
-        BearerTokenHandler handler = new(new FakeAccessTokenProvider("my-access-token")) { InnerHandler = inner };
+        BearerTokenHandler handler = new(() => new FakeAccessTokenProvider("my-access-token")) { InnerHandler = inner };
         using HttpClient client = new(handler) { BaseAddress = new Uri("http://localhost:5266") };
 
         await client.GetAsync("/api/v1/auth/me", TestContext.Current.CancellationToken);
@@ -33,7 +33,7 @@ public sealed class BearerTokenHandlerTests
     public async Task DoesNotAttachAHeader_WhenNoTokenIsAvailable()
     {
         StubHttpMessageHandler inner = StubHttpMessageHandler.RespondWith(HttpStatusCode.OK, "{}");
-        BearerTokenHandler handler = new(new FakeAccessTokenProvider(null)) { InnerHandler = inner };
+        BearerTokenHandler handler = new(() => new FakeAccessTokenProvider(null)) { InnerHandler = inner };
         using HttpClient client = new(handler) { BaseAddress = new Uri("http://localhost:5266") };
 
         await client.GetAsync("/api/v1/system/info", TestContext.Current.CancellationToken);
@@ -45,7 +45,7 @@ public sealed class BearerTokenHandlerTests
     public async Task DoesNotAttachAHeader_WhenTheRequestOptsOutViaSkipAuthentication()
     {
         StubHttpMessageHandler inner = StubHttpMessageHandler.RespondWith(HttpStatusCode.OK, "{}");
-        BearerTokenHandler handler = new(new FakeAccessTokenProvider("my-access-token")) { InnerHandler = inner };
+        BearerTokenHandler handler = new(() => new FakeAccessTokenProvider("my-access-token")) { InnerHandler = inner };
         using HttpClient client = new(handler) { BaseAddress = new Uri("http://localhost:5266") };
 
         using HttpRequestMessage request = new(HttpMethod.Post, "/api/v1/auth/login");

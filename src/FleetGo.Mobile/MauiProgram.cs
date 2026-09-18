@@ -74,7 +74,15 @@ public static class MauiProgram
         // BearerTokenHandler attaches the current access token (via IAccessTokenProvider,
         // registered below) to every request the typed client makes. Transient by
         // convention for HttpMessageHandlers registered with AddHttpMessageHandler.
-        services.AddTransient<BearerTokenHandler>();
+        //
+        // The provider is handed over as a factory, not as a resolved instance:
+        // AuthenticationService implements IAccessTokenProvider AND consumes
+        // IFleetGoApiClient, and IHttpClientFactory builds this handler chain while that
+        // client is being constructed. Resolving IAccessTokenProvider here would re-enter
+        // the half-built AuthenticationService - a construction cycle the container cannot
+        // satisfy. The lookup happens per request instead, once everything is built.
+        services.AddTransient(serviceProvider =>
+            new BearerTokenHandler(() => serviceProvider.GetRequiredService<IAccessTokenProvider>()));
 
         // Typed client over IHttpClientFactory: the factory pools and recycles the
         // underlying handlers (a raw long-lived HttpClient misses DNS changes; a
