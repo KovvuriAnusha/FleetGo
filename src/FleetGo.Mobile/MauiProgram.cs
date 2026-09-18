@@ -173,6 +173,22 @@ public static class MauiProgram
         // left over from a previous attempt.
         services.AddTransient<OtpVerificationViewModel>();
         services.AddTransient<OtpVerificationPage>();
+
+        // Phase 4B driver screens. All transient: each visit to a route or a stop should
+        // load that record fresh, not redisplay whichever one was opened last - and the
+        // detail pages are resolved per navigation by Shell, with the id supplied as a
+        // query parameter.
+        services.AddTransient<DashboardViewModel>();
+        services.AddTransient<DashboardPage>();
+
+        services.AddTransient<RouteListViewModel>();
+        services.AddTransient<RouteListPage>();
+
+        services.AddTransient<RouteDetailViewModel>();
+        services.AddTransient<RouteDetailPage>();
+
+        services.AddTransient<StopDetailViewModel>();
+        services.AddTransient<StopDetailPage>();
     }
 }
 

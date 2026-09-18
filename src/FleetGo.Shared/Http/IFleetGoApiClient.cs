@@ -1,5 +1,6 @@
 using FleetGo.Shared.Contracts;
 using FleetGo.Shared.Contracts.Auth;
+using FleetGo.Shared.Contracts.Fleet;
 
 namespace FleetGo.Shared.Http;
 
@@ -73,5 +74,65 @@ public interface IFleetGoApiClient
     /// already used, or the account is not eligible.
     /// </exception>
     Task<TokenResponse> VerifyOtpAsync(VerifyOtpRequest request, CancellationToken cancellationToken = default);
-}
 
+    // ---------------------------------------------------------------------
+    // Fleet operations (Phase 4A). All of these require an authenticated caller;
+    // BearerTokenHandler attaches the access token, and the endpoints scope every
+    // result to the caller's own driver profile server-side - there is deliberately
+    // no driverId parameter here to pass (or to get wrong).
+    // ---------------------------------------------------------------------
+
+    /// <summary>
+    /// Lists the authenticated driver's routes, newest page first.
+    /// </summary>
+    /// <param name="page">1-based page number.</param>
+    /// <param name="pageSize">Items per page; the API caps this at 100.</param>
+    /// <param name="status">Optional status filter.</param>
+    /// <param name="routeDate">Optional exact-date filter.</param>
+    /// <param name="sort">Optional sort key: routeDate, status or routeNumber, prefixed with '-' for descending.</param>
+    Task<PagedResponse<RouteResponse>> GetRoutesAsync(
+        int page = 1,
+        int pageSize = 20,
+        RouteStatus? status = null,
+        DateOnly? routeDate = null,
+        string? sort = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Reads one of the caller's own routes.</summary>
+    /// <exception cref="FleetGoApiException">
+    /// Thrown with status <c>404 Not Found</c> when the route does not exist <em>or</em>
+    /// belongs to another driver - the API does not distinguish the two.
+    /// </exception>
+    Task<RouteResponse> GetRouteAsync(Guid routeId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists stops across the caller's routes, or on one route when
+    /// <paramref name="routeId"/> is supplied.
+    /// </summary>
+    Task<PagedResponse<StopResponse>> GetStopsAsync(
+        Guid? routeId = null,
+        int page = 1,
+        int pageSize = 20,
+        StopStatus? status = null,
+        string? search = null,
+        string? sort = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Reads one stop on one of the caller's own routes.</summary>
+    Task<StopResponse> GetStopAsync(Guid stopId, CancellationToken cancellationToken = default);
+
+    /// <summary>Lists packages across the caller's stops, or on one stop when <paramref name="stopId"/> is supplied.</summary>
+    Task<PagedResponse<PackageResponse>> GetPackagesAsync(
+        Guid? stopId = null,
+        int page = 1,
+        int pageSize = 20,
+        PackageStatus? status = null,
+        string? search = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Reads one fleet vehicle. Vehicles are shared fleet data, not per-driver.</summary>
+    Task<VehicleResponse> GetVehicleAsync(Guid vehicleId, CancellationToken cancellationToken = default);
+
+    /// <summary>Reads one customer. Customers are shared reference data, not per-driver.</summary>
+    Task<CustomerResponse> GetCustomerAsync(Guid customerId, CancellationToken cancellationToken = default);
+}
