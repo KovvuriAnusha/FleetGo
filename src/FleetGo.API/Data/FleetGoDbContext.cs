@@ -1,5 +1,6 @@
 using FleetGo.API.Data.Entities;
 using Microsoft.EntityFrameworkCore;
+using Route = FleetGo.API.Data.Entities.Route;
 
 namespace FleetGo.API.Data;
 
@@ -24,6 +25,16 @@ public sealed class FleetGoDbContext : DbContext
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     public DbSet<OtpCode> OtpCodes => Set<OtpCode>();
+
+    public DbSet<Vehicle> Vehicles => Set<Vehicle>();
+
+    public DbSet<Customer> Customers => Set<Customer>();
+
+    public DbSet<Route> Routes => Set<Route>();
+
+    public DbSet<Stop> Stops => Set<Stop>();
+
+    public DbSet<Package> Packages => Set<Package>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

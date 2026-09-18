@@ -328,7 +328,164 @@ outside this app's process. `MauiProgram.ConfigureOtpAutofillKeyboard` wires thi
 one `Entry` marked `StyleId="OtpCodeEntry"` via a MAUI handler mapping; app code never sees the
 message. Manual entry remains the fallback if the suggestion does not appear.
 
+## Phase 4A: fleet operations backend
+
+Phase 4A adds the server-side data model and API for fleet operations - vehicles, customers,
+routes, stops and packages - with no mobile UI yet (that is Phase 4B) and no GPS tracking, proof of
+delivery, barcode scanning, or offline sync (all later phases; see "Explicitly out of scope" below).
+
+### Domain shape: an ownership tree rooted at the authenticated driver
+
+```
+User / Driver ──┬── Vehicle           (optional assignment, many vehicles can be unassigned)
+                 └── Route ── Stop ──┬── Customer   (shared reference data, not owned)
+                                      └── Package
+```
+
+`Vehicle` and `Route` both hang directly off `Driver` - the existing Phase 2 identity, not a new
+"fleet user" concept - because the JWT already carries a `driver_id` claim for exactly this
+purpose (see "Phase 2: authentication" above). `Stop` and `Package` do not carry their own driver
+reference at all: a stop's owner is its route's driver, and a package's owner is its stop's route's
+driver. This is deliberate - a route's driver is the single place ownership is recorded, so
+reassigning a route (if a later phase ever allows that) automatically reassigns every stop and
+package on it, rather than requiring three tables to be kept in sync.
+
+`Customer` is the one entity in the tree with no owner at all: the same customer legitimately
+appears on different drivers' routes over time (a recurring delivery address), so it is modelled as
+shared reference data - any authenticated caller can list, view, create or edit a customer, the same
+way `Auth`'s own account data works for everyone who is signed in. `Vehicle` sits in between: every
+authenticated caller can see the whole fleet (a driver picking a vehicle for tomorrow's route needs
+to see vehicles other drivers aren't using), but a vehicle can only be *assigned* to the caller's own
+driver profile - never to someone else's - so an id in a request body can't be used to hand a
+vehicle to a driver who never agreed to take it. `VehicleEndpoints` enforces this as a 403, not a
+validation error, because it is an authorization rule, not a data-shape rule.
+
+This shape is chosen so later phases (GPS breadcrumbs, delivery status transitions, proof of
+delivery, barcode scanning, offline sync) attach to `Route`/`Stop`/`Package` as new tables or columns
+without changing who owns what.
+
+### Delete behaviour: `Restrict`/`SetNull`, never cascade, for the same reason as `RefreshToken`
+
+Every foreign key in the new schema is configured explicitly in its `IEntityTypeConfiguration<T>`
+(`Data/Configurations/*Configuration.cs`), following the precedent `RefreshTokenConfiguration`
+already set for `ReplacedByTokenId` (Phase 2): a required reference (`Route.DriverId`,
+`Stop.RouteId`, `Stop.CustomerId`, `Package.StopId`) uses `DeleteBehavior.Restrict`, and an optional
+one (`Vehicle.DriverId`, `Route.VehicleId`) uses `DeleteBehavior.SetNull`. Nothing cascades. A route
+is operational history - proof a driver worked a given day, what was on it, whether it was
+completed - and letting a driver or vehicle deletion silently delete that history out from under an
+audit would be a bug, not a convenience. There is deliberately no delete endpoint for any of the
+five entities either; retiring a vehicle, cancelling a route, or failing a package are all status
+changes (`VehicleStatus.Retired`, `RouteStatus.Cancelled`, `PackageStatus.Failed`, ...), never row
+deletion, for the same reason.
+
+### Status enums: duplicated across the `Shared`/`API` boundary on purpose
+
+`FleetGo.Shared` has zero project references (see "Why a shared project at all" above) - it is a
+plain contracts library both the API and the mobile app depend on, not the other way around. That
+means the four status enums (`VehicleStatus`, `RouteStatus`, `StopStatus`, `PackageStatus`) each
+exist twice: once as the persisted, EF-mapped type in `FleetGo.API.Data.Entities`
+(`.HasConversion<string>().HasMaxLength(20)` - stored as text, not an integer, so the column reads
+sensibly in a database tool without a lookup table), and once as the wire-contract type in
+`FleetGo.Shared.Contracts.Fleet` (`[JsonConverter(typeof(JsonStringEnumConverter))]`, for the same
+reason - a mobile developer reading a captured request body should see `"status": "InProgress"`,
+not `"status": 1`). Every endpoint file that needs both aliases the wire-contract namespace
+(`using Contracts = FleetGo.Shared.Contracts.Fleet;`) and maps explicitly between the two with a
+small `switch` expression, always performed in memory after a query is materialised - never inside
+an EF LINQ `.Select()`, where a custom mapping call would risk an untranslatable-expression failure
+at runtime.
+
+### Pagination: one shape, enforced in the database, never negotiable per endpoint
+
+Every list endpoint returns the same `PagedResponse<T>` shape:
+
+```json
+{ "items": [...], "page": 1, "pageSize": 20, "totalCount": 100, "totalPages": 5 }
+```
+
+`Pagination/PageRequest.cs` validates `page`/`pageSize` once (`page >= 1`, `1 <= pageSize <= 100`,
+defaulting to page 1 / size 20) and returns a structured `ValidationProblem` on failure rather than
+letting each endpoint hand-roll its own range check. `Pagination/PagedQueryExtensions.ToPagedResponseAsync`
+then does the count and the page of rows as two database queries (`CountAsync`, then
+`Skip().Take().ToListAsync()`) against a still-unmaterialised `IQueryable<T>` - the caller's query
+must reach that method without an earlier `ToList()`/`ToArray()`, or paging would happen in memory
+against a fully-loaded table instead of in SQL. Every list endpoint's query is also filtered with
+`AsNoTracking()` and projects straight to an anonymous shape (or directly to the response record for
+`Customer`, which has no enum to map) rather than `Include()`-ing full entity graphs, so a page of
+100 rows never pulls in more than the columns the response actually needs.
+
+### Filtering and sorting: explicit per entity, not a query language
+
+Each entity supports exactly the filters called for by its own shape - Vehicles: status; Customers:
+name search; Routes: status, route date, and a `sort` parameter (`routeDate`, `status`,
+`routeNumber`, each with an optional `-` prefix for descending); Stops: status, customer-name
+search, and `sort=sequence`/`-sequence`; Packages: status and tracking-number search - rather than a
+generic filter/sort DSL that would accept arbitrary field names. `Filtering/QueryParsing.cs` parses
+the non-string filters (an enum, a `DateOnly`) from their raw query-string value by hand, because
+letting ASP.NET Core's implicit model binding fail on a bad `status=Sold` produces a generic,
+unhelpful 400; parsing it explicitly produces a field-attributed `ValidationProblem` entry instead
+(`{"errors": {"status": ["'Sold' is not a valid VehicleStatus. Expected one of: ..."]}}`). A search
+filter (customer name, tracking number) is a plain `string.Contains(...)`, translated to a SQL
+`LIKE` by EF Core - deliberately not a full-text or fuzzy match, which this phase has no requirement
+for.
+
+### Authorization: ownership derived from the token, 404 instead of 403 across drivers
+
+The rule the rest of this section serves: **a driver can never read, list, or modify another
+driver's route, stop, or package by guessing or changing an id.** `Auth/ClaimsPrincipalExtensions.GetDriverId()`
+reads the `driver_id` claim already issued at login (Phase 2); every route/stop/package endpoint
+uses that value as the *only* source of ownership, never a value from the request body or URL.
+Concretely:
+
+- `RouteEndpoints` scopes every list/get/update to `route.DriverId == callerDriverId`. A route id
+  that belongs to another driver and a route id that does not exist at all both produce **404**, not
+  403 - returning 403 would itself leak the information that the id belongs to *someone*, just not
+  the caller, which is exactly the kind of enumeration a multi-driver API should not allow.
+- `StopEndpoints` and `PackageEndpoints` apply the same rule one (respectively two) hops removed:
+  a stop is reachable only through a route the caller owns, and a package only through a stop whose
+  route the caller owns. Listing without a `routeId`/`stopId` filter returns results across every
+  route/stop the caller *does* own (a join, not a second round trip); listing *with* one 404s
+  immediately if the caller doesn't own that parent, before it ever executes the inner query.
+- An account with no driver profile at all (a future dispatch/back-office role - see `Driver`'s own
+  doc comment) gets **403** from every route/stop/package endpoint (`FleetProblems.Forbidden`,
+  `"This account has no driver profile."`) rather than a confusing empty list or a 404, since the
+  problem there is who they are, not which resource they asked for.
+- `Vehicle` and `Customer` have no per-row ownership check on read (they are shared, as above);
+  `Vehicle`'s write-time check (assign only to yourself) is the one 403 that is about the request
+  body rather than the URL.
+
+Duplicate identifiers - a repeated `RegistrationNumber`, `RouteNumber`, `(RouteId, Sequence)`, or
+`TrackingNumber` - are enforced by both a unique index (`*Configuration.cs`) and a pre-flight
+`AnyAsync` check in the endpoint, returned as **409 Conflict** via a shared `FleetProblems.Conflict`
+helper, distinct from the 400s that field-level validation produces.
+
+### Explicitly out of scope
+
+This phase is the backend only. It does not add - and nothing in it should be read as claiming -
+a dashboard or any mobile UI for these endpoints (Phase 4B), GPS tracking or live location, delivery
+status changes driven by proof-of-delivery capture, barcode/QR scanning, BLE, camera or signature
+capture, push notifications, payments, or offline/background sync. Those remain future-roadmap
+items; see docs/roadmap.md.
+
+### Known gap surfaced, not introduced, by this phase: the missing `OtpCode` migration
+
+`OtpCode` (its entity, `IEntityTypeConfiguration<T>`, and `DbSet`) was added in Phase 3, but no
+migration for it was ever generated - the only migration in the repository before this phase,
+`InitialAuth`, predates `OtpCode` entirely, and docs/roadmap.md already tracked this as a TODO
+("run `dotnet ef migrations add AddOtp` locally"). Since a migration is a diff against the model the
+*previous* migration describes, `AddFleetOperations` (this phase's migration) necessarily also
+creates the `OtpCodes` table - it is the first migration generated since `OtpCode` was added, not a
+Phase 4A change to `OtpCode` itself. Nothing about `OtpCode`'s entity or configuration changed here.
+
 ## Testing
+
+`FleetGo.API.Tests` boots the real host in memory with `WebApplicationFactory`, so routing, DI,
+serialisation and middleware are all exercised together. Nothing of our own code is mocked; the
+tests fail if any of those pieces is misconfigured, which is precisely the class of bug unit tests
+on handlers would miss. Phase 4A's `VehicleEndpointsTests`, `CustomerEndpointsTests`,
+`RouteEndpointsTests`, `StopEndpointsTests` and `PackageEndpointsTests` follow the same pattern
+`AuthEndpointsTests` established, plus `FleetTestSupport` for the seeding helpers (a driver, a
+second independent driver, a customer, a route, a stop, a package) that every one of them needs to
+exercise the cross-driver isolation rules above.
 
 `FleetGo.API.Tests` boots the real host in memory with `WebApplicationFactory`, so routing, DI,
 serialisation and middleware are all exercised together. Nothing of our own code is mocked; the
