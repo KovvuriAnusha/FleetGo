@@ -25,6 +25,11 @@
 
   <ItemGroup>
     <PackageReference Include="xunit.v3" Version="4.0.0" />
+    <!-- AuthenticationDependencyGraphTests builds the app's real service graph - the same
+         AddHttpClient + AddHttpMessageHandler wiring MauiProgram uses - so the composition
+         root is exercised by a test rather than only by launching the app. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.12" />
   </ItemGroup>
 
   <ItemGroup>
