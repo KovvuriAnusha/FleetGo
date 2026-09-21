@@ -37,6 +37,35 @@
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">15.0</SupportedOSPlatformVersion>
   </PropertyGroup>
 
+  <!--
+    API base address, supplied at build time:
+
+        dotnet build src/FleetGo.Mobile -f net10.0-android -c Release -p:FleetGoApiBaseAddress=https://your-api.example
+
+    The value is written into assembly metadata and read back by ApiSettings. There is no
+    default here and no placeholder host: this repository has no deployed API, and baking in
+    a fake one would only move the failure to runtime, on a device, as a confusing timeout.
+
+    Debug builds may leave it unset - ApiSettings then falls back to the local development
+    API (10.0.2.2 on the Android emulator, localhost elsewhere), so the day-to-day loop is
+    unchanged. Release builds may not: the target below fails the build instead, because a
+    Release artifact that quietly expects a developer's loopback address is worse than one
+    that does not exist.
+  -->
+  <Target Name="RequireFleetGoApiBaseAddressForRelease"
+          BeforeTargets="BeforeBuild"
+          Condition="'$(Configuration)' == 'Release' AND '$(FleetGoApiBaseAddress)' == ''">
+    <Error Code="FLEETGO0001"
+           Text="A Release build needs an API base address. Pass -p:FleetGoApiBaseAddress=https://your-api.example (see docs/development-setup.md, 'Pointing the app at an API'). Debug builds fall back to the local development API; Release builds deliberately do not." />
+  </Target>
+
+  <ItemGroup Condition="'$(FleetGoApiBaseAddress)' != ''">
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>FleetGo.ApiBaseAddress</_Parameter1>
+      <_Parameter2>$(FleetGoApiBaseAddress)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
   <ItemGroup>
     <!-- App icon: the foreground SVG is composited over the Color background. -->
     <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#0B63E5" />

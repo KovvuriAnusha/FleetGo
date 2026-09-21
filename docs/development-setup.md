@@ -160,6 +160,31 @@ the `test.runner` setting above, that the test project sets
 `<UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>`, and that
 neither `Microsoft.NET.Test.Sdk` nor `xunit.runner.visualstudio` is referenced.
 
+## Pointing the app at an API
+
+The mobile app's API address is supplied at build time by the `FleetGoApiBaseAddress` MSBuild
+property, which the project writes into assembly metadata for `ApiSettings` to read back.
+
+```bash
+# Debug - no property needed. Falls back to the local development API:
+#   Android emulator -> http://10.0.2.2:5266      iOS simulator / Mac Catalyst -> http://localhost:5266
+dotnet build src/FleetGo.Mobile -t:Run -f net10.0-android
+
+# A physical device on your network, or any other host
+dotnet build src/FleetGo.Mobile -t:Run -f net10.0-android -p:FleetGoApiBaseAddress=http://192.168.1.10:5266
+
+# Release - the property is REQUIRED. Without it the build fails with FLEETGO0001.
+dotnet build src/FleetGo.Mobile -f net10.0-android -c Release -p:FleetGoApiBaseAddress=https://your-api.example
+```
+
+There is no default and no placeholder host for Release: this repository has no deployed API, and
+a fake hostname would only turn a build-time error into a confusing timeout on a device. Supply
+the real address at deployment time.
+
+Note that Android permits cleartext HTTP only for `10.0.2.2` and `localhost`
+(`Platforms/Android/Resources/xml/network_security_config.xml`), so a non-local address should be
+HTTPS.
+
 ## Ports and addresses
 
 The API listens on `http://localhost:5266` (and `https://localhost:7266` under the `https` profile),

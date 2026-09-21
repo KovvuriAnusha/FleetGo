@@ -476,6 +476,84 @@ migration for it was ever generated - the only migration in the repository befor
 creates the `OtpCodes` table - it is the first migration generated since `OtpCode` was added, not a
 Phase 4A change to `OtpCode` itself. Nothing about `OtpCode`'s entity or configuration changed here.
 
+## Phase 4B: driver mobile experience
+
+### The dashboard is composed on the client, because there is no aggregation endpoint
+
+Phase 4A exposes list and detail endpoints, not a dashboard summary. Rather than invent one, the
+dashboard makes a single call - `GET /api/v1/fleet/routes?routeDate=<today>` - and counts the
+result client-side, alongside the driver identity the session already holds. That keeps the
+backend honest (no endpoint exists to serve one screen) at the cost of one documented limit: the
+summary is accurate up to the API's 100-per-page cap, which is far beyond one driver's day.
+
+### View models in `FleetGo.Mobile.Core`, navigation in the pages
+
+Every Phase 4B screen follows the split Phase 2 established: the view model holds state and calls
+the API, and knows nothing about Shell; the page owns navigation and turns a `CollectionView`
+selection into a command. View models raise events (`RouteSelected`, `StopSelected`,
+`SessionExpired`) that the code-behind translates into `GoToAsync`. That is what lets all four
+screens be tested without an emulator.
+
+`FleetPageViewModel` is the one piece of shared machinery: the busy/error/loaded state the four
+screens have in common, and a single place that maps an exception to a message a driver can act
+on - 401 to "session expired" (plus the event that returns them to sign-in), 404 to "we couldn't
+find that", a transport failure to "could not reach the API". Without it that mapping would be
+copied four times.
+
+### Paging is generation-guarded
+
+The route list appends pages as the driver scrolls and reloads from page 1 when the filter
+changes. Those two can overlap: a load-more already in flight would otherwise append its rows,
+and its paging position, into a list that has since been refiltered. Each first-page load opens a
+new generation and a load-more discards its response if the generation moved while it was away.
+
+## Phase 4C: integration, polish and release
+
+### The API base address is a build input, not a constant
+
+`ApiSettings` reads the address from assembly metadata written by the `FleetGoApiBaseAddress`
+MSBuild property. A Debug build may omit it and falls back to the platform's loopback address, so
+the everyday loop is unchanged. A Release build may not: the project file fails the build, and
+`ApiEnvironment.ResolveBaseAddress` throws if it is ever reached without one. A Release artifact
+quietly pointed at `10.0.2.2` is worse than one that refuses to build, and this repository has no
+deployed API to default to - so it defaults to nothing.
+
+### Why the token provider is resolved per request
+
+`AuthenticationService` implements `IAccessTokenProvider` and consumes `IFleetGoApiClient`, while
+`BearerTokenHandler` needs the provider to authenticate that same client. `IHttpClientFactory`
+builds the handler chain *while* the typed client is being constructed, so resolving the provider
+in the handler's constructor re-entered the half-built session singleton - a construction cycle
+the container cannot satisfy, invisible to the compiler and to every test that builds its
+subjects by hand. The handler takes a `Func<IAccessTokenProvider>` and resolves it in `SendAsync`,
+once everything is built. `AuthenticationDependencyGraphTests` builds a real container to keep it
+that way.
+
+### Health detail is developmental
+
+The liveness and readiness probes stay anonymous - an orchestrator cannot authenticate - but
+outside development the response drops the per-check breakdown and keeps only the aggregate
+status, which is all a probe reads. The writer never emitted exception text or configuration in
+the first place; this narrows what an anonymous caller learns about the API's dependencies.
+
+### Android backups are off
+
+The signed-in session lives in `SecureStorage`, which on Android is `EncryptedSharedPreferences`.
+Leaving backup enabled would let those preferences travel into a cloud or adb backup - and,
+because the keys that decrypt them stay in the device keystore, a restored copy also tends to come
+back unreadable. `allowBackup="false"` avoids both, and nothing in this app is worth restoring
+that signing in again does not rebuild.
+
+### Forwarded headers: deliberately not configured
+
+The OTP rate limiters partition by `HttpContext.Connection.RemoteIpAddress`. Behind a reverse
+proxy that is the proxy's address, which would collapse a per-caller limit into a global one.
+The fix is `UseForwardedHeaders` with `KnownProxies`/`KnownNetworks` - but configuring it without
+knowing the deployment means either trusting `X-Forwarded-For` from anyone, which lets an attacker
+forge a fresh partition per request and defeat the limiter entirely, or inventing infrastructure
+this repository does not have. It is left unconfigured on purpose, and this is the note that says
+so: it must be set up as part of any real deployment behind a proxy.
+
 ## Testing
 
 `FleetGo.API.Tests` boots the real host in memory with `WebApplicationFactory`, so routing, DI,

@@ -1,7 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-  <application android:allowBackup="true"
+  <!--
+    allowBackup="false": the signed-in session (access and refresh tokens) lives in
+    SecureStorage, which on Android is EncryptedSharedPreferences. Leaving backup on would
+    let those preferences travel into a cloud or adb backup and be restored onto another
+    device - and, because the encryption keys are held in the device keystore and do NOT
+    travel with them, a restored copy also tends to come back unreadable, which surfaces as
+    SecureStorage throwing on launch. Both problems disappear by not backing this app up;
+    there is nothing in it worth restoring that signing in again does not rebuild.
+  -->
+  <application android:allowBackup="false"
                android:icon="@mipmap/appicon"
                android:roundIcon="@mipmap/appicon_round"
                android:supportsRtl="true"

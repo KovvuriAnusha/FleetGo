@@ -60,7 +60,7 @@ public static class MauiProgram
 
     private static void RegisterAppServices(IServiceCollection services)
     {
-        ApiSettings apiSettings = ApiSettings.CreateDevelopmentDefaults();
+        ApiSettings apiSettings = ApiSettings.Create();
         services.AddSingleton(apiSettings);
 
         // Injected instead of DateTimeOffset.UtcNow so time-dependent logic stays testable.

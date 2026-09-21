@@ -23,13 +23,16 @@ than a collection of disconnected demos.
 
 | Phase | Scope | State |
 |-------|-------|-------|
-| 1 | Solution foundation: projects, DI, OpenAPI, health checks, landing page, tests, CI | ✅ Complete |
-| 2 | Authentication: JWT + refresh tokens, EF Core + SQL Server, secure token storage | 🔧 Implemented, pending build/test verification |
-| 3+ | Routes, stops, offline-first sync, location tracking, proof of delivery, payments | 📋 Planned |
+| 1 | Solution foundation: projects, DI, OpenAPI, health checks, tests, CI | ✅ Complete |
+| 2 | Authentication: JWT + refresh tokens with rotation, EF Core + SQL Server, secure token storage | ✅ Complete |
+| 3 | One-time-code sign-in, Android SMS autofill, biometric unlock | ✅ Complete |
+| 4A | Fleet operations backend: vehicles, customers, routes, stops, packages | ✅ Complete |
+| 4B | Driver mobile experience: dashboard, route list, route detail, stop detail | ✅ Complete |
+| 4C | Integration, polish and release configuration | ✅ Complete |
+| 5+ | Offline-first sync, proof of delivery, location tracking, payments | 📋 Planned |
 
-The full plan is in [docs/roadmap.md](docs/roadmap.md). Phase 2's code was written in an
-environment without a reachable .NET SDK, so it has not yet been compiled, run, or tested - see
-that phase's pull request notes for what to verify locally before merging.
+The full plan is in [docs/roadmap.md](docs/roadmap.md), and the reasoning behind the design
+decisions is in [docs/architecture.md](docs/architecture.md).
 
 ---
 
@@ -102,6 +105,10 @@ dotnet run --project src/FleetGo.API
 | Health report | <http://localhost:5266/health> |
 
 ### Run the mobile app
+
+The app's API address is a build input. Debug builds fall back to the local development API;
+Release builds require `-p:FleetGoApiBaseAddress=...` and fail without it - see
+[docs/development-setup.md](docs/development-setup.md#pointing-the-app-at-an-api).
 
 ```bash
 # Android emulator

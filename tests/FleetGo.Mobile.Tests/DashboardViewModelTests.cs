@@ -31,6 +31,28 @@ public sealed class DashboardViewModelTests
     }
 
     [Fact]
+    public async Task Load_ExcludesCancelledRoutesFromTheStopCount()
+    {
+        FakeFleetGoApiClient apiClient = FakeFleetGoApiClient.WithRoutes(
+            FleetTestData.Route("R-001", RouteStatus.Planned, stopCount: 5),
+            FleetTestData.Route("R-002", RouteStatus.Cancelled, stopCount: 7));
+
+        DashboardViewModel viewModel = CreateViewModel(apiClient);
+
+        await viewModel.LoadCommand.ExecuteAsync(null);
+
+        // A cancelled route's stops are not work still to do, and counting them made the
+        // headline number disagree with the Planned/Active/Done tiles beside it.
+        Assert.Equal(5, viewModel.StopsToday);
+        Assert.Equal(1, viewModel.PlannedCount);
+        Assert.Equal(0, viewModel.InProgressCount);
+        Assert.Equal(0, viewModel.CompletedCount);
+
+        // The route itself is still listed - it is part of today, just not outstanding work.
+        Assert.Equal(2, viewModel.TodayRoutes.Count);
+    }
+
+    [Fact]
     public async Task Load_PicksTheInProgressRouteAsTheActiveOne()
     {
         FakeFleetGoApiClient apiClient = FakeFleetGoApiClient.WithRoutes(
