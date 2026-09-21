@@ -53,6 +53,15 @@ public partial class RouteListPage : ContentPage
 
     private void OnStatusFilterChanged(object? sender, EventArgs e)
     {
+        // A Picker raises this when its SelectedItem binding is first applied, before the
+        // driver has touched anything - and that initial raise races OnAppearing's own load,
+        // so without this guard entering the page fired two identical page-1 requests.
+        // Nothing to re-query until the first load has happened.
+        if (!_viewModel.HasLoaded)
+        {
+            return;
+        }
+
         // The Picker has already written the new value onto SelectedStatusFilter through its
         // binding; this just re-runs the query with it.
         if (_viewModel.RefreshCommand.CanExecute(null))

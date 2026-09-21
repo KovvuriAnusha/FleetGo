@@ -173,7 +173,12 @@ public sealed partial class DashboardViewModel : FleetPageViewModel
         PlannedCount = routes.Count(route => route.Status == RouteStatus.Planned);
         InProgressCount = routes.Count(route => route.Status == RouteStatus.InProgress);
         CompletedCount = routes.Count(route => route.Status == RouteStatus.Completed);
-        StopsToday = routes.Sum(route => route.StopCount);
+        // Cancelled routes are excluded: their stops are not work the driver still has to do,
+        // and counting them made "12 stops" disagree with the Planned/Active/Done tiles above
+        // it, which never counted cancelled routes either.
+        StopsToday = routes
+            .Where(route => route.Status != RouteStatus.Cancelled)
+            .Sum(route => route.StopCount);
 
         ActiveRoute =
             routes.FirstOrDefault(route => route.Status == RouteStatus.InProgress)
