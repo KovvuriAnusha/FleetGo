@@ -37,6 +37,42 @@ internal sealed class FakeFleetGoApiClient : IFleetGoApiClient
     public Func<Guid, CancellationToken, Task<CustomerResponse>> GetCustomerHandler { get; set; } =
         (_, _) => Task.FromResult(FleetTestData.Customer());
 
+    public Func<Guid, CancellationToken, Task<PackageResponse>> GetPackageHandler { get; set; } =
+        (_, _) => Task.FromResult(FleetTestData.Package());
+
+    // Phase 5's mutations. Each defaults to echoing the request back as the server would,
+    // with UpdatedAtUtc moved on - which is exactly what a real update does, and what the
+    // sync engine's conflict detection depends on noticing.
+    public Func<Guid, UpdateRouteRequest, CancellationToken, Task<RouteResponse>> UpdateRouteHandler { get; set; } =
+        (id, request, _) => Task.FromResult(FleetTestData.Route(
+            routeNumber: request.RouteNumber,
+            status: request.Status,
+            id: id,
+            vehicleId: request.VehicleId,
+            routeDate: request.RouteDate) with { UpdatedAtUtc = DateTime.UnixEpoch.AddMinutes(1) });
+
+    public Func<Guid, UpdateStopRequest, CancellationToken, Task<StopResponse>> UpdateStopHandler { get; set; } =
+        (id, request, _) => Task.FromResult(FleetTestData.Stop(
+            sequence: request.Sequence,
+            status: request.Status,
+            id: id,
+            customerId: request.CustomerId,
+            deliveryNotes: request.DeliveryNotes) with { UpdatedAtUtc = DateTime.UnixEpoch.AddMinutes(1) });
+
+    public Func<Guid, UpdatePackageRequest, CancellationToken, Task<PackageResponse>> UpdatePackageHandler { get; set; } =
+        (id, request, _) => Task.FromResult(FleetTestData.Package(
+            trackingNumber: request.TrackingNumber,
+            status: request.Status,
+            description: request.Description,
+            id: id) with { UpdatedAtUtc = DateTime.UnixEpoch.AddMinutes(1) });
+
+    /// <summary>Every route update sent, so a test can assert what the outbox actually put on the wire.</summary>
+    public List<(Guid RouteId, UpdateRouteRequest Request)> RouteUpdates { get; } = [];
+
+    public List<(Guid StopId, UpdateStopRequest Request)> StopUpdates { get; } = [];
+
+    public List<(Guid PackageId, UpdatePackageRequest Request)> PackageUpdates { get; } = [];
+
     /// <summary>Every route-list query this client was asked to make, in order - so a test can assert on paging and filtering.</summary>
     public List<RouteQuery> RouteQueries { get; } = [];
 
@@ -102,6 +138,27 @@ internal sealed class FakeFleetGoApiClient : IFleetGoApiClient
     {
         PackageQueryStopIds.Add(stopId);
         return GetPackagesHandler(stopId, page, pageSize, status, search, cancellationToken);
+    }
+
+    public Task<PackageResponse> GetPackageAsync(Guid packageId, CancellationToken cancellationToken = default) =>
+        GetPackageHandler(packageId, cancellationToken);
+
+    public Task<RouteResponse> UpdateRouteAsync(Guid routeId, UpdateRouteRequest request, CancellationToken cancellationToken = default)
+    {
+        RouteUpdates.Add((routeId, request));
+        return UpdateRouteHandler(routeId, request, cancellationToken);
+    }
+
+    public Task<StopResponse> UpdateStopAsync(Guid stopId, UpdateStopRequest request, CancellationToken cancellationToken = default)
+    {
+        StopUpdates.Add((stopId, request));
+        return UpdateStopHandler(stopId, request, cancellationToken);
+    }
+
+    public Task<PackageResponse> UpdatePackageAsync(Guid packageId, UpdatePackageRequest request, CancellationToken cancellationToken = default)
+    {
+        PackageUpdates.Add((packageId, request));
+        return UpdatePackageHandler(packageId, request, cancellationToken);
     }
 
     public Task<VehicleResponse> GetVehicleAsync(Guid vehicleId, CancellationToken cancellationToken = default) =>

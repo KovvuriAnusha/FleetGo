@@ -1,7 +1,11 @@
 using FleetGo.Mobile.Configuration;
 using FleetGo.Mobile.Core.Biometrics;
+using FleetGo.Mobile.Core.Offline;
+using FleetGo.Mobile.Core.Offline.Connectivity;
+using FleetGo.Mobile.Core.Offline.Sync;
 using FleetGo.Mobile.Core.Otp;
 using FleetGo.Mobile.Core.Session;
+using FleetGo.Mobile.Core.Threading;
 using FleetGo.Mobile.Core.ViewModels;
 using FleetGo.Mobile.Services;
 using FleetGo.Mobile.ViewModels;
@@ -46,6 +50,7 @@ public static class MauiProgram
 
         RegisterAppServices(builder.Services);
         RegisterAuthenticationServices(builder.Services);
+        RegisterOfflineServices(builder.Services);
         RegisterOtpAndBiometricServices(builder.Services);
         RegisterViewsAndViewModels(builder.Services);
 
@@ -107,6 +112,52 @@ public static class MauiProgram
         services.AddSingleton<AuthenticationService>();
         services.AddSingleton<IAuthenticationService>(sp => sp.GetRequiredService<AuthenticationService>());
         services.AddSingleton<IAccessTokenProvider>(sp => sp.GetRequiredService<AuthenticationService>());
+    }
+
+    /// <summary>
+    /// Phase 5's offline stack: the device database, the outbox, and the engine that drains it.
+    /// <para>
+    /// Everything here is a singleton, and for one reason each. The store owns a SQLite
+    /// connection, and a second one on the same file is how a mobile app earns "database is
+    /// locked". The sync service owns the guard that stops two syncs running at once, which
+    /// only works if there is one of it. The coordinator owns event subscriptions and a timer.
+    /// The banner view model is shared so every screen says the same thing about the network.
+    /// </para>
+    /// </summary>
+    private static void RegisterOfflineServices(IServiceCollection services)
+    {
+        // AppDataDirectory is the platform's private, backed-up-per-policy app folder - not
+        // shared storage. Passed in rather than looked up inside the store so the same class
+        // runs against a temp file in tests, with no MAUI present at all.
+        services.AddSingleton(new LocalStoreOptions(
+            Path.Combine(FileSystem.AppDataDirectory, LocalStoreOptions.DefaultFileName)));
+
+        services.AddSingleton<ILocalFleetStore, SqliteLocalFleetStore>();
+
+        services.AddSingleton<IConnectivityService, MauiConnectivityService>();
+        services.AddSingleton<IUiDispatcher, MauiUiDispatcher>();
+
+        // Defaults spelled out in RetryPolicyOptions.Default: roughly nine minutes of
+        // jittered exponential backoff, then the operation is declared stuck rather than
+        // retried forever.
+        services.AddSingleton<IRetryPolicy>(_ => new ExponentialBackoffRetryPolicy());
+
+        services.AddSingleton<IFleetRepository, FleetRepository>();
+
+        // One instance behind two interfaces, exactly as AuthenticationService is: the object
+        // that runs a sync is the object that knows what the last one did, and splitting that
+        // would create two answers to "are we up to date?".
+        services.AddSingleton<SyncService>();
+        services.AddSingleton<ISyncService>(sp => sp.GetRequiredService<SyncService>());
+        services.AddSingleton<ISyncStatusProvider>(sp => sp.GetRequiredService<SyncService>());
+
+        // The coordinator owns the triggers; ISyncTrigger is the narrow face of it the
+        // screens see, so a view model can ask for a sync without also being handed the
+        // ability to start timers and subscribe to session events.
+        services.AddSingleton<SyncCoordinator>();
+        services.AddSingleton<ISyncTrigger>(sp => sp.GetRequiredService<SyncCoordinator>());
+
+        services.AddSingleton<SyncStatusViewModel>();
     }
 
     private static void RegisterOtpAndBiometricServices(IServiceCollection services)

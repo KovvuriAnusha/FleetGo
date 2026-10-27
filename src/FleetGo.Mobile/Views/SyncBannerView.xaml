@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:viewmodels="clr-namespace:FleetGo.Mobile.Core.ViewModels;assembly=FleetGo.Mobile.Core"
+             x:Class="FleetGo.Mobile.Views.SyncBannerView"
+             x:DataType="viewmodels:SyncStatusViewModel"
+             IsVisible="{Binding IsBannerVisible}">
+
+    <!--
+        The one place the app tells a driver how current what they are looking at actually is.
+
+        Every fleet screen embeds this and binds it to the same shared view model, so the
+        dashboard and the stop detail page can never disagree about whether the device is
+        online. The wording comes from SyncStatusViewModel, which is deliberately never
+        optimistic - "waiting to send" is not "saved", and a conflict says outright that a
+        person has to decide.
+
+        The whole banner disappears when there is nothing true worth saying: online, queue
+        empty, and a sync has actually happened.
+    -->
+    <Border Padding="12,10"
+            Margin="0,0,0,8"
+            StrokeThickness="1"
+            Stroke="{AppThemeBinding Light={StaticResource Gray200}, Dark={StaticResource Gray600}}"
+            BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource Gray950}}">
+        <Border.StrokeShape>
+            <RoundRectangle CornerRadius="10" />
+        </Border.StrokeShape>
+
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+
+            <ActivityIndicator Grid.Column="0"
+                               IsRunning="{Binding IsSyncing}"
+                               IsVisible="{Binding IsSyncing}"
+                               HeightRequest="16"
+                               WidthRequest="16"
+                               VerticalOptions="Center" />
+
+            <VerticalStackLayout Grid.Column="1" Spacing="1" VerticalOptions="Center">
+                <Label Text="{Binding StatusText}"
+                       LineBreakMode="WordWrap"
+                       SemanticProperties.Description="Sync status" />
+                <Label Text="{Binding LastSyncedText}"
+                       FontSize="12"
+                       TextColor="{StaticResource Gray500}" />
+            </VerticalStackLayout>
+
+            <!--
+                Offered only when a retry could plausibly help. A conflict is not on that list:
+                pressing "Try now" on one would either do nothing or overwrite somebody else's
+                change, and both are worse than the driver opening the stop and choosing.
+            -->
+            <Button Grid.Column="2"
+                    Text="Try now"
+                    FontSize="13"
+                    Padding="12,4"
+                    IsVisible="{Binding IsOnline}"
+                    Command="{Binding SyncNowCommand}"
+                    VerticalOptions="Center" />
+        </Grid>
+    </Border>
+
+</ContentView>

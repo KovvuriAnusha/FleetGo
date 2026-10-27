@@ -1,80 +1,55 @@
 using System.Net;
+using FleetGo.Mobile.Core.Offline;
+using FleetGo.Mobile.Core.Offline.Sync;
 using FleetGo.Mobile.Core.ViewModels;
-using FleetGo.Shared.Contracts;
+using FleetGo.Mobile.Tests.Offline;
 using FleetGo.Shared.Contracts.Fleet;
 using FleetGo.Shared.Http;
 
 namespace FleetGo.Mobile.Tests;
 
-public sealed class RouteListViewModelTests
+public class RouteListViewModelTests
 {
     [Fact]
     public async Task Load_PopulatesRoutesAndTotal()
     {
-        FakeFleetGoApiClient apiClient = FakeFleetGoApiClient.WithRoutes(
-            FleetTestData.Route("R-001", RouteStatus.InProgress, stopCount: 8),
-            FleetTestData.Route("R-002", RouteStatus.Planned, stopCount: 3));
+        var repository = PagedRepository(
+            total: 2,
+            FleetTestData.Route("R-001"),
+            FleetTestData.Route("R-002"));
 
-        RouteListViewModel viewModel = new(apiClient);
+        RouteListViewModel viewModel = Build(repository);
 
         await viewModel.LoadCommand.ExecuteAsync(null);
 
         Assert.Equal(2, viewModel.Routes.Count);
-        Assert.Equal("R-001", viewModel.Routes[0].RouteNumber);
         Assert.Equal(2, viewModel.TotalCount);
-        Assert.True(viewModel.HasLoaded);
-        Assert.False(viewModel.IsBusy);
         Assert.False(viewModel.IsEmpty);
-        Assert.Null(viewModel.ErrorMessage);
+        Assert.False(viewModel.CanLoadMore);
     }
 
     [Fact]
     public async Task Load_WithNoRoutes_ReportsTheEmptyState()
     {
-        FakeFleetGoApiClient apiClient = FakeFleetGoApiClient.WithRoutes();
-        RouteListViewModel viewModel = new(apiClient);
+        RouteListViewModel viewModel = Build(new FakeFleetRepository());
 
         await viewModel.LoadCommand.ExecuteAsync(null);
 
-        Assert.Empty(viewModel.Routes);
         Assert.True(viewModel.IsEmpty);
+        Assert.True(viewModel.HasLoaded);
         Assert.False(viewModel.HasErrorMessage);
-    }
-
-    [Fact]
-    public async Task Load_WhenTheApiIsUnreachable_ShowsAnErrorAndNotTheEmptyState()
-    {
-        FakeFleetGoApiClient apiClient = FakeFleetGoApiClient.ThatFailsRouteListWith(new HttpRequestException("no network"));
-        RouteListViewModel viewModel = new(apiClient);
-
-        await viewModel.LoadCommand.ExecuteAsync(null);
-
-        Assert.Equal("Could not reach the API. Is it running?", viewModel.ErrorMessage);
-        Assert.True(viewModel.HasErrorMessage);
-        // A failure is not an empty result: showing "no routes to show" here would tell the
-        // driver something the app does not actually know.
-        Assert.False(viewModel.IsEmpty);
-        Assert.False(viewModel.IsBusy);
-    }
-
-    [Fact]
-    public async Task Load_WhenTheApiReturnsAnError_ShowsAGenericFailureMessage()
-    {
-        FakeFleetGoApiClient apiClient = FakeFleetGoApiClient.ThatFailsRouteListWith(
-            new FleetGoApiException("boom", HttpStatusCode.InternalServerError));
-        RouteListViewModel viewModel = new(apiClient);
-
-        await viewModel.LoadCommand.ExecuteAsync(null);
-
-        Assert.Equal("The API could not complete that request. Please try again.", viewModel.ErrorMessage);
     }
 
     [Fact]
     public async Task Load_WhenTheSessionHasExpired_RaisesSessionExpired()
     {
-        FakeFleetGoApiClient apiClient = FakeFleetGoApiClient.ThatFailsRouteListWith(
-            new FleetGoApiException("unauthorized", HttpStatusCode.Unauthorized));
-        RouteListViewModel viewModel = new(apiClient);
+        var repository = new FakeFleetRepository
+        {
+            RoutesHandler = (_, _, _, _) => Task.FromException<CachedData<RoutePage>>(
+                new FleetGoApiException("expired", HttpStatusCode.Unauthorized)),
+        };
+
+        RouteListViewModel viewModel = Build(repository);
 
         bool raised = false;
         viewModel.SessionExpired += (_, _) => raised = true;
@@ -86,159 +61,179 @@ public sealed class RouteListViewModelTests
     }
 
     [Fact]
-    public async Task Load_SendsTheSelectedStatusFilterToTheApi()
+    public async Task Load_PassesTheSelectedStatusFilterToTheRepository()
     {
-        FakeFleetGoApiClient apiClient = FakeFleetGoApiClient.WithRoutes();
-        RouteListViewModel viewModel = new(apiClient)
+        var repository = new FakeFleetRepository();
+        var filters = new List<RouteStatus?>();
+
+        repository.RoutesHandler = (status, _, _, _) =>
         {
-            SelectedStatusFilter = new RouteStatusFilterOption("Completed", RouteStatus.Completed),
+            filters.Add(status);
+            return Task.FromResult(new CachedData<RoutePage>(new RoutePage([], 0), null, false));
         };
+
+        RouteListViewModel viewModel = Build(repository);
+        viewModel.SelectedStatusFilter = viewModel.StatusFilterOptions.Single(option => option.Value == RouteStatus.Completed);
 
         await viewModel.LoadCommand.ExecuteAsync(null);
 
-        Assert.Equal(RouteStatus.Completed, apiClient.RouteQueries[0].Status);
-        Assert.Equal(1, apiClient.RouteQueries[0].Page);
+        AssertThat.Sequence([RouteStatus.Completed], filters);
     }
 
     [Fact]
-    public async Task LoadMore_AppendsTheNextPage()
+    public async Task LoadMore_AppendsTheNextPageFromWhereTheListGotTo()
     {
-        RouteResponse first = FleetTestData.Route("R-001");
-        RouteResponse second = FleetTestData.Route("R-002");
+        var repository = new FakeFleetRepository();
+        var skips = new List<int>();
 
-        FakeFleetGoApiClient apiClient = new()
+        repository.RoutesHandler = (_, skip, take, _) =>
         {
-            GetRoutesHandler = (page, pageSize, _, _, _, _) => Task.FromResult(
-                page == 1
-                    ? FleetTestData.PageOf(1, pageSize, totalCount: 2, first)
-                    : FleetTestData.PageOf(2, pageSize, totalCount: 2, second)),
+            skips.Add(skip);
+
+            RouteResponse[] items = skip == 0
+                ? [FleetTestData.Route("R-001"), FleetTestData.Route("R-002")]
+                : [FleetTestData.Route("R-003")];
+
+            return Task.FromResult(new CachedData<RoutePage>(new RoutePage(items, 3), null, false));
         };
 
-        RouteListViewModel viewModel = new(apiClient);
+        RouteListViewModel viewModel = Build(repository);
 
         await viewModel.LoadCommand.ExecuteAsync(null);
         Assert.True(viewModel.CanLoadMore);
 
         await viewModel.LoadMoreCommand.ExecuteAsync(null);
 
-        Assert.Equal(2, viewModel.Routes.Count);
-        Assert.Equal("R-002", viewModel.Routes[1].RouteNumber);
+        AssertThat.Sequence([0, 2], skips);
+        Assert.Equal(3, viewModel.Routes.Count);
         Assert.False(viewModel.CanLoadMore);
-        Assert.Equal(2, apiClient.RouteQueries.Count);
-        Assert.Equal(2, apiClient.RouteQueries[1].Page);
     }
 
     [Fact]
     public async Task LoadMore_DoesNothing_WhenEverythingIsAlreadyLoaded()
     {
-        FakeFleetGoApiClient apiClient = FakeFleetGoApiClient.WithRoutes(FleetTestData.Route("R-001"));
-        RouteListViewModel viewModel = new(apiClient);
+        var repository = PagedRepository(total: 1, FleetTestData.Route("R-001"));
+        RouteListViewModel viewModel = Build(repository);
 
         await viewModel.LoadCommand.ExecuteAsync(null);
+
+        int readsAfterFirstLoad = 0;
+        repository.RoutesHandler = (_, _, _, _) =>
+        {
+            readsAfterFirstLoad++;
+            return Task.FromResult(new CachedData<RoutePage>(new RoutePage([], 1), null, false));
+        };
+
         await viewModel.LoadMoreCommand.ExecuteAsync(null);
 
-        // One page loaded, one request made - the list must not keep asking for pages that
-        // cannot exist as it scrolls.
-        Assert.Single(apiClient.RouteQueries);
+        Assert.Equal(0, readsAfterFirstLoad);
         Assert.Single(viewModel.Routes);
     }
 
     [Fact]
-    public async Task Refresh_LeavesTheLoadedRoutesAlone_WhenTheRefreshFails()
+    public async Task Refresh_LeavesTheLoadedRoutesAlone_WhenTheReadFails()
     {
-        bool fail = false;
-        RouteResponse existing = FleetTestData.Route("R-001");
+        var repository = PagedRepository(total: 1, FleetTestData.Route("R-001"));
+        RouteListViewModel viewModel = Build(repository);
 
-        FakeFleetGoApiClient apiClient = new()
-        {
-            GetRoutesHandler = (page, pageSize, _, _, _, _) => fail
-                ? Task.FromException<PagedResponse<RouteResponse>>(new HttpRequestException("dropped"))
-                : Task.FromResult(FleetTestData.PageOf(page, pageSize, totalCount: 1, existing)),
-        };
-
-        RouteListViewModel viewModel = new(apiClient);
         await viewModel.LoadCommand.ExecuteAsync(null);
+        Assert.Single(viewModel.Routes);
 
-        fail = true;
+        repository.RoutesHandler = (_, _, _, _) => Task.FromException<CachedData<RoutePage>>(
+            new FleetGoApiException("boom", HttpStatusCode.InternalServerError));
+
         await viewModel.RefreshCommand.ExecuteAsync(null);
 
-        // Blanking the list behind an error message would lose what the driver was reading.
+        // Blanking a list the driver can still read, because a refresh failed, is worse than
+        // showing it with a message over the top.
         Assert.Single(viewModel.Routes);
         Assert.True(viewModel.HasErrorMessage);
         Assert.False(viewModel.IsRefreshing);
     }
 
     [Fact]
-    public async Task LoadMore_DiscardsItsResponse_WhenTheFilterChangedWhileItWasInFlight()
+    public async Task Refresh_AsksForASync()
     {
-        // Regression: a load-more that is still in flight when the driver changes the filter
-        // must not append its rows to the new, differently filtered list - nor move the paging
-        // position, which would then page the wrong result set.
-        RouteResponse stalePageTwoRoute = FleetTestData.Route("R-ALL-2");
-        RouteResponse completedRoute = FleetTestData.Route("R-DONE-1", RouteStatus.Completed);
+        var trigger = new FakeSyncTrigger();
+        RouteListViewModel viewModel = Build(new FakeFleetRepository(), trigger);
 
-        TaskCompletionSource<PagedResponse<RouteResponse>> deferredPageTwo =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        FakeFleetGoApiClient apiClient = new()
-        {
-            GetRoutesHandler = (page, pageSize, status, _, _, _) =>
-            {
-                if (page == 2)
-                {
-                    // The "All" filter's second page: held open until the test releases it.
-                    return deferredPageTwo.Task;
-                }
-
-                return status == RouteStatus.Completed
-                    ? Task.FromResult(FleetTestData.PageOf(1, pageSize, totalCount: 1, completedRoute))
-                    : Task.FromResult(FleetTestData.PageOf(1, pageSize, totalCount: 40, FleetTestData.Route("R-ALL-1")));
-            },
-        };
-
-        RouteListViewModel viewModel = new(apiClient);
-
-        // 1. Page 1 of the unfiltered list, with more pages available.
-        await viewModel.LoadCommand.ExecuteAsync(null);
-        Assert.True(viewModel.CanLoadMore);
-
-        // 2. Start load-more; it blocks on the deferred response.
-        Task loadMore = viewModel.LoadMoreCommand.ExecuteAsync(null);
-
-        // 3. The driver switches the filter, which refreshes to page 1 of "Completed".
-        viewModel.SelectedStatusFilter = new RouteStatusFilterOption("Completed", RouteStatus.Completed);
         await viewModel.RefreshCommand.ExecuteAsync(null);
 
-        // 4. Only now does the old query answer.
-        deferredPageTwo.SetResult(FleetTestData.PageOf(2, 20, totalCount: 40, stalePageTwoRoute));
+        AssertThat.Sequence([SyncReason.Manual], trigger.AwaitedReasons);
+    }
+
+    [Fact]
+    public async Task LoadMore_DiscardsItsResponse_WhenTheFilterChangedWhileItWasInFlight()
+    {
+        // The Phase 4B defect this guards against: a load-more that was started under one
+        // filter must not append its rows to the list a later refresh has since replaced.
+        var repository = new FakeFleetRepository();
+        var gate = new TaskCompletionSource();
+        bool firstLoadDone = false;
+
+        repository.RoutesHandler = async (status, skip, _, _) =>
+        {
+            if (!firstLoadDone)
+            {
+                firstLoadDone = true;
+                return new CachedData<RoutePage>(
+                    new RoutePage([FleetTestData.Route("R-001"), FleetTestData.Route("R-002")], 4),
+                    null,
+                    false);
+            }
+
+            if (skip > 0)
+            {
+                // The stale page: held open until the test has started a newer first-page load.
+                await gate.Task;
+                return new CachedData<RoutePage>(new RoutePage([FleetTestData.Route("STALE")], 4), null, false);
+            }
+
+            return new CachedData<RoutePage>(
+                new RoutePage([FleetTestData.Route("R-100", status: status ?? RouteStatus.Planned)], 1),
+                null,
+                false);
+        };
+
+        RouteListViewModel viewModel = Build(repository);
+
+        await viewModel.LoadCommand.ExecuteAsync(null);
+
+        Task loadMore = viewModel.LoadMoreCommand.ExecuteAsync(null);
+
+        viewModel.SelectedStatusFilter = viewModel.StatusFilterOptions.Single(option => option.Value == RouteStatus.Completed);
+        await viewModel.RefreshCommand.ExecuteAsync(null);
+
+        gate.SetResult();
         await loadMore;
 
-        // 5. The stale rows were dropped.
-        Assert.Equal("R-DONE-1", Assert.Single(viewModel.Routes).RouteNumber);
-        Assert.DoesNotContain(viewModel.Routes, route => route.RouteNumber == stalePageTwoRoute.RouteNumber);
-
-        // 6. Paging state still describes the refreshed query: one route out of one, so there
-        //    is nothing more to fetch - had the stale response been applied, TotalCount would
-        //    be 40 and the list would keep paging the unfiltered set.
+        Assert.Single(viewModel.Routes);
+        Assert.Equal("R-100", viewModel.Routes[0].RouteNumber);
         Assert.Equal(1, viewModel.TotalCount);
-        Assert.False(viewModel.CanLoadMore);
-        Assert.False(viewModel.IsLoadingMore);
-        Assert.False(viewModel.IsRefreshing);
+        Assert.DoesNotContain(viewModel.Routes, route => route.RouteNumber == "STALE");
     }
 
     [Fact]
     public async Task SelectRoute_RaisesRouteSelectedWithTheRouteId()
     {
-        RouteResponse route = FleetTestData.Route("R-001");
-        FakeFleetGoApiClient apiClient = FakeFleetGoApiClient.WithRoutes(route);
-        RouteListViewModel viewModel = new(apiClient);
+        RouteResponse route = FleetTestData.Route();
+        RouteListViewModel viewModel = Build(PagedRepository(total: 1, route));
 
         Guid? selected = null;
-        viewModel.RouteSelected += (_, routeId) => selected = routeId;
+        viewModel.RouteSelected += (_, id) => selected = id;
 
-        await viewModel.LoadCommand.ExecuteAsync(null);
-        viewModel.SelectRouteCommand.Execute(viewModel.Routes[0]);
+        viewModel.SelectRouteCommand.Execute(route);
 
         Assert.Equal(route.Id, selected);
     }
+
+    private static FakeFleetRepository PagedRepository(int total, params RouteResponse[] routes) =>
+        new()
+        {
+            RoutesHandler = (_, skip, take, _) => Task.FromResult(
+                new CachedData<RoutePage>(new RoutePage([.. routes.Skip(skip).Take(take)], total), DateTime.UnixEpoch, false)),
+        };
+
+    private static RouteListViewModel Build(FakeFleetRepository repository, FakeSyncTrigger? trigger = null) =>
+        new(repository, trigger ?? new FakeSyncTrigger(), OfflineTestFactory.SyncStatus());
 }

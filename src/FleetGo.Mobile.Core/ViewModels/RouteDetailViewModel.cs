@@ -1,34 +1,27 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using FleetGo.Shared.Contracts;
+using FleetGo.Mobile.Core.Offline;
 using FleetGo.Shared.Contracts.Fleet;
-using FleetGo.Shared.Http;
 
 namespace FleetGo.Mobile.Core.ViewModels;
 
 /// <summary>
 /// Backs the route detail screen: one route, the vehicle assigned to it (when there is one),
-/// and its stops in running order.
+/// and its stops in running order - all read from the device.
 /// </summary>
 public sealed partial class RouteDetailViewModel : FleetPageViewModel
 {
-    /// <summary>
-    /// A single route's stops comfortably fit one page - a working day is tens of stops, not
-    /// hundreds - so this screen loads them in one call rather than paging a list the driver
-    /// wants to see whole.
-    /// </summary>
-    private const int StopPageSize = 100;
-
-    private readonly IFleetGoApiClient _apiClient;
+    private readonly IFleetRepository _repository;
 
     /// <summary>Remembered so <see cref="ReloadCommand"/> can retry without the page passing the id again.</summary>
     private Guid _routeId;
 
-    public RouteDetailViewModel(IFleetGoApiClient apiClient)
+    public RouteDetailViewModel(IFleetRepository repository, SyncStatusViewModel sync)
+        : base(sync)
     {
-        ArgumentNullException.ThrowIfNull(apiClient);
-        _apiClient = apiClient;
+        ArgumentNullException.ThrowIfNull(repository);
+        _repository = repository;
     }
 
     /// <summary>Raised when a driver picks a stop. The page turns this into Shell navigation.</summary>
@@ -42,9 +35,8 @@ public sealed partial class RouteDetailViewModel : FleetPageViewModel
     public partial RouteResponse? Route { get; set; }
 
     /// <summary>
-    /// Null when the route has no vehicle assigned yet, and also when the vehicle lookup
-    /// itself failed - see <see cref="LoadVehicleAsync"/> for why that is not treated as a
-    /// failure of the whole screen.
+    /// Null when the route has no vehicle assigned yet, and also when the vehicle has never
+    /// been cached on this device.
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasVehicle))]
@@ -58,7 +50,7 @@ public sealed partial class RouteDetailViewModel : FleetPageViewModel
 
     /// <summary>
     /// Whether a vehicle is assigned at all. The registration number travels on the route
-    /// itself, so this is true even when the fuller vehicle record could not be loaded.
+    /// itself, so this is true even when the fuller vehicle record is not cached.
     /// </summary>
     public bool HasVehicleRegistration => !string.IsNullOrEmpty(Route?.VehicleRegistrationNumber);
 
@@ -73,36 +65,32 @@ public sealed partial class RouteDetailViewModel : FleetPageViewModel
         _routeId = routeId;
 
         bool succeeded = await RunAsync(
+            token => LoadFromDeviceAsync(routeId, token),
+            cancellationToken);
+
+        HasNoStops = succeeded && HasRoute && Stops.Count == 0;
+    }
+
+    /// <summary>
+    /// Retry after a failure, and the pull-to-refresh action. Tries to pull this one route
+    /// down again first, then re-reads the device either way - so a refresh with no signal
+    /// still repaints rather than failing.
+    /// </summary>
+    [RelayCommand]
+    private async Task ReloadAsync(CancellationToken cancellationToken)
+    {
+        Guid routeId = _routeId;
+
+        bool succeeded = await RunAsync(
             async token =>
             {
-                RouteResponse route = await _apiClient.GetRouteAsync(routeId, token);
-
-                PagedResponse<StopResponse> stops = await _apiClient.GetStopsAsync(
-                    routeId: routeId,
-                    page: 1,
-                    pageSize: StopPageSize,
-                    sort: "sequence",
-                    cancellationToken: token);
-
-                Route = route;
-
-                Stops.Clear();
-
-                foreach (StopResponse stop in stops.Items)
-                {
-                    Stops.Add(stop);
-                }
-
-                await LoadVehicleAsync(route, token);
+                await TryRefreshAsync(() => _repository.RefreshRouteDetailAsync(routeId, token));
+                await LoadFromDeviceAsync(routeId, token);
             },
             cancellationToken);
 
-        HasNoStops = succeeded && Stops.Count == 0;
+        HasNoStops = succeeded && HasRoute && Stops.Count == 0;
     }
-
-    /// <summary>Retry after a failure, and the pull-to-refresh action.</summary>
-    [RelayCommand]
-    private Task ReloadAsync(CancellationToken cancellationToken) => LoadAsync(_routeId, cancellationToken);
 
     [RelayCommand]
     private void SelectStop(StopResponse? stop)
@@ -113,28 +101,27 @@ public sealed partial class RouteDetailViewModel : FleetPageViewModel
         }
     }
 
-    /// <summary>
-    /// Fetches the assigned vehicle's full record for the make/model the route summary does
-    /// not carry. Failures here are swallowed deliberately: the route and its stops are what
-    /// this screen is for, and losing the vehicle's make is not worth replacing all of it
-    /// with an error. The registration number still shows, because it travels on the route
-    /// itself.
-    /// </summary>
-    private async Task LoadVehicleAsync(RouteResponse route, CancellationToken cancellationToken)
+    private async Task LoadFromDeviceAsync(Guid routeId, CancellationToken cancellationToken)
     {
-        if (route.VehicleId is null)
+        CachedData<RouteDetail> cached = await _repository.GetRouteDetailAsync(routeId, cancellationToken);
+
+        Route = cached.Value.Route;
+        Vehicle = cached.Value.Vehicle;
+        HasPendingLocalChange = cached.HasPendingLocalChange;
+
+        Stops.Clear();
+
+        foreach (StopResponse stop in cached.Value.Stops)
         {
-            Vehicle = null;
-            return;
+            Stops.Add(stop);
         }
 
-        try
+        if (Route is null)
         {
-            Vehicle = await _apiClient.GetVehicleAsync(route.VehicleId.Value, cancellationToken);
-        }
-        catch (Exception exception) when (exception is FleetGoApiException or HttpRequestException)
-        {
-            Vehicle = null;
+            // Not an API failure - the device simply does not have this route, and without a
+            // network there is nowhere to get it from. Saying so is more useful than a
+            // generic error, because the fix ("open it once with a connection") is different.
+            ErrorMessage = "This route isn't saved on this device yet. Connect to a network and pull down to refresh.";
         }
     }
 }

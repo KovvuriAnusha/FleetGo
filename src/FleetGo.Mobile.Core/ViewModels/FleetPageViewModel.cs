@@ -5,9 +5,9 @@ using FleetGo.Shared.Http;
 namespace FleetGo.Mobile.Core.ViewModels;
 
 /// <summary>
-/// Shared plumbing for the Phase 4B fleet screens: the busy/error/loaded state every one of
-/// them shows, and one place that turns an exception from the API into a message a driver
-/// can act on.
+/// Shared plumbing for the fleet screens: the busy/error/loaded state every one of them
+/// shows, one place that turns an exception from the API into a message a driver can act on,
+/// and the sync banner they all display.
 /// <para>
 /// This exists because the four fleet view models would otherwise repeat the same
 /// twenty-line try/catch. It deliberately adds no navigation, no service locator and no
@@ -17,6 +17,12 @@ namespace FleetGo.Mobile.Core.ViewModels;
 /// </summary>
 public abstract partial class FleetPageViewModel : ObservableObject
 {
+    protected FleetPageViewModel(SyncStatusViewModel sync)
+    {
+        ArgumentNullException.ThrowIfNull(sync);
+        Sync = sync;
+    }
+
     /// <summary>
     /// Raised when the API rejects the session outright (401). By this point the token
     /// provider has already tried to refresh - see <c>AuthenticationService.GetAccessTokenAsync</c> -
@@ -25,6 +31,12 @@ public abstract partial class FleetPageViewModel : ObservableObject
     /// view model knows nothing about Shell.
     /// </summary>
     public event EventHandler? SessionExpired;
+
+    /// <summary>
+    /// The shared sync banner. A singleton, so every fleet screen says the same thing about
+    /// the network and the queue rather than each keeping its own opinion.
+    /// </summary>
+    public SyncStatusViewModel Sync { get; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsNotBusy))]
@@ -41,6 +53,15 @@ public abstract partial class FleetPageViewModel : ObservableObject
     /// </summary>
     [ObservableProperty]
     public partial bool HasLoaded { get; set; }
+
+    /// <summary>
+    /// True when something on this screen is still waiting to reach the server. Bound next to
+    /// the record it belongs to rather than only in the banner, because "your change is saved
+    /// on this device but the server has not seen it" is a fact about that stop, not about the
+    /// app as a whole.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool HasPendingLocalChange { get; set; }
 
     public bool IsNotBusy => !IsBusy;
 
@@ -119,5 +140,31 @@ public abstract partial class FleetPageViewModel : ObservableObject
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Runs an optional network refresh and reports whether it worked, swallowing the two
+    /// failures that mean "no network right now".
+    /// <para>
+    /// Since Phase 5 the screens read from the device, so losing the network is not a failed
+    /// load - there is still data to show. Turning "the API was unreachable" into a red box
+    /// over a perfectly usable list would undo the whole point of the offline work. Anything
+    /// the API actually answered with is left to <see cref="RunAsync"/> to map, because those
+    /// mean something specific.
+    /// </para>
+    /// </summary>
+    protected static async Task<bool> TryRefreshAsync(Func<Task> refresh)
+    {
+        ArgumentNullException.ThrowIfNull(refresh);
+
+        try
+        {
+            await refresh();
+            return true;
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+        {
+            return false;
+        }
     }
 }

@@ -183,6 +183,13 @@ public sealed class FleetGoApiClient : IFleetGoApiClient
             cancellationToken);
 
     /// <inheritdoc />
+    public Task<PackageResponse> GetPackageAsync(Guid packageId, CancellationToken cancellationToken = default) =>
+        GetAsync(
+            $"{ApiRoutes.PackagesBase}/{packageId}",
+            FleetGoJsonSerializerContext.Default.PackageResponse,
+            cancellationToken);
+
+    /// <inheritdoc />
     public Task<VehicleResponse> GetVehicleAsync(Guid vehicleId, CancellationToken cancellationToken = default) =>
         GetAsync(
             $"{ApiRoutes.VehiclesBase}/{vehicleId}",
@@ -194,6 +201,33 @@ public sealed class FleetGoApiClient : IFleetGoApiClient
         GetAsync(
             $"{ApiRoutes.CustomersBase}/{customerId}",
             FleetGoJsonSerializerContext.Default.CustomerResponse,
+            cancellationToken);
+
+    /// <inheritdoc />
+    public Task<RouteResponse> UpdateRouteAsync(Guid routeId, UpdateRouteRequest request, CancellationToken cancellationToken = default) =>
+        PutAsync(
+            $"{ApiRoutes.RoutesBase}/{routeId}",
+            request,
+            FleetGoJsonSerializerContext.Default.UpdateRouteRequest,
+            FleetGoJsonSerializerContext.Default.RouteResponse,
+            cancellationToken);
+
+    /// <inheritdoc />
+    public Task<StopResponse> UpdateStopAsync(Guid stopId, UpdateStopRequest request, CancellationToken cancellationToken = default) =>
+        PutAsync(
+            $"{ApiRoutes.StopsBase}/{stopId}",
+            request,
+            FleetGoJsonSerializerContext.Default.UpdateStopRequest,
+            FleetGoJsonSerializerContext.Default.StopResponse,
+            cancellationToken);
+
+    /// <inheritdoc />
+    public Task<PackageResponse> UpdatePackageAsync(Guid packageId, UpdatePackageRequest request, CancellationToken cancellationToken = default) =>
+        PutAsync(
+            $"{ApiRoutes.PackagesBase}/{packageId}",
+            request,
+            FleetGoJsonSerializerContext.Default.UpdatePackageRequest,
+            FleetGoJsonSerializerContext.Default.PackageResponse,
             cancellationToken);
 
     /// <summary>
@@ -282,6 +316,35 @@ public sealed class FleetGoApiClient : IFleetGoApiClient
                 $"POST {route} failed with HTTP {(int)response.StatusCode} ({response.ReasonPhrase}).",
                 response.StatusCode);
         }
+    }
+
+    /// <summary>
+    /// Sends a full replacement and reads the updated resource back.
+    /// <para>
+    /// The response body is not a convenience here: the offline sync engine uses it as the
+    /// new baseline for anything still queued against the same record, which is what stops
+    /// the app reporting a conflict against a change it made itself a moment earlier.
+    /// </para>
+    /// </summary>
+    private async Task<TResponse> PutAsync<TRequest, TResponse>(
+        string route,
+        TRequest body,
+        JsonTypeInfo<TRequest> requestTypeInfo,
+        JsonTypeInfo<TResponse> responseTypeInfo,
+        CancellationToken cancellationToken)
+        where TResponse : class
+    {
+        using HttpRequestMessage httpRequest = new(HttpMethod.Put, route)
+        {
+            Content = JsonContent.Create(body, requestTypeInfo),
+        };
+
+        using HttpResponseMessage response = await _httpClient
+            .SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+
+        return await ReadBodyAsync("PUT", route, response, responseTypeInfo, cancellationToken, [])
+            .ConfigureAwait(false);
     }
 
     private static async Task<T> ReadBodyAsync<T>(

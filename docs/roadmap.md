@@ -113,12 +113,36 @@ and the model snapshot, but it has not been applied to a real SQL Server - see
 - Two integration defects fixed (route-list double load on entry, dashboard stop count)
 - Documentation brought in line with the code
 
-## Phase 5 — Offline first
+## Phase 5 — Offline first ✅
 
-- SQLite local store and a local-first read path
-- Outbox for mutations made offline, with conflict handling
-- Background synchronisation and retry with exponential backoff
-- Connectivity detection and honest UI state
+- SQLite local store (`sqlite-net`) in `FleetGo.Mobile.Core`, with its own flattened schema
+  rather than the wire contracts stored as-is, so it runs - and is tested - with no emulator
+- A local-first read path: the driver screens read from the device and never from the network.
+  The network is touched only by the sync engine, by pull-to-refresh, and by a one-off hydration
+  when the cache has never held what a screen is asking for
+- An outbox for changes made offline, ordered by an autoincrementing sequence (not a timestamp),
+  coalescing repeated changes to the same record, and bounded at 500 pending operations
+- Conflict handling built on what the API actually offers. It has no ETag, version column or
+  `If-Match`, so the engine reads the record, compares it against the snapshot captured when the
+  change was queued, and parks the operation if it has moved. A conflict is never auto-retried,
+  never merged on a guess, and never disappears silently - the driver chooses *keep mine* or
+  *discard mine*. The remaining read-to-write gap is documented rather than papered over; closing
+  it is server work
+- Retry with jittered exponential backoff and a hard attempt budget, plus failure classification
+  so permanent rejections are not retried at all
+- Connectivity detection, and sync triggered by session start, the network returning, the app
+  resuming, a queued change, and a heartbeat. **Not** OS-level background execution - see
+  "Sync triggers, and what 'background' honestly means here" in
+  [docs/architecture.md](architecture.md)
+- Honest UI state: one shared banner, no optimistic wording, per-record "waiting to send"
+  markers, and conflicts surfaced on the stop they belong to
+- Data safety: no tokens or credentials in SQLite, no customer data or session secrets in logs,
+  the cache bound to one driver and wiped when that changes or on sign-out
+
+New API surface: this phase added `PUT` methods for routes, stops and packages to
+`IFleetGoApiClient` (the endpoints already existed since Phase 4A - the client was read-only) and
+a single-package `GET`. No new server endpoints were invented to make offline work look better
+than the API supports.
 
 ## Phase 6 — Proof of delivery
 
