@@ -29,7 +29,8 @@ than a collection of disconnected demos.
 | 4A | Fleet operations backend: vehicles, customers, routes, stops, packages | ✅ Complete |
 | 4B | Driver mobile experience: dashboard, route list, route detail, stop detail | ✅ Complete |
 | 4C | Integration, polish and release configuration | ✅ Complete |
-| 5+ | Offline-first sync, proof of delivery, location tracking, payments | 📋 Planned |
+| 5 | Offline first: on-device SQLite, local-first reads, outbox, conflict handling, sync | ✅ Complete |
+| 6+ | Proof of delivery, location tracking, notifications, payments | 📋 Planned |
 
 The full plan is in [docs/roadmap.md](docs/roadmap.md), and the reasoning behind the design
 decisions is in [docs/architecture.md](docs/architecture.md).
@@ -40,7 +41,9 @@ decisions is in [docs/architecture.md](docs/architecture.md).
 
 **Mobile** — .NET 10, .NET MAUI 10, C#, XAML, MVVM (CommunityToolkit.Mvvm), dependency injection,
 Shell navigation, compiled bindings. `FleetGo.Mobile.Core` (added in Phase 2) holds view models and
-session/token logic in a plain, MAUI-free library so they run under regular unit tests.
+session/token logic in a plain, MAUI-free library so they run under regular unit tests. Phase 5
+added the offline stack there too - a `sqlite-net` local database, an outbox and a sync engine -
+for the same reason: it is all testable on a build agent with no emulator attached.
 
 **Backend** — ASP.NET Core 10 Minimal APIs, OpenAPI (Scalar UI), health checks (including a
 readiness check against the database), RFC 9457 `problem+json` error responses. Entity Framework
@@ -49,7 +52,9 @@ added in Phase 2.
 
 **Testing** — xUnit v3; integration tests that boot the real API host in memory through
 `WebApplicationFactory` (SQLite in-memory for anything that touches the database), plus unit tests
-for the client-side code, including the Phase 2 view models and session/token handling.
+for the client-side code, including the Phase 2 view models and session/token handling and Phase
+5's offline layer - which is tested against real SQLite on a real file, because the things most
+likely to be wrong in it are the SQL and the transactions a fake would hide.
 
 ---
 
@@ -60,7 +65,7 @@ FleetGo/
 ├── src/
 │   ├── FleetGo.Shared/        Contracts, routes, JSON settings and the typed API client
 │   ├── FleetGo.API/           ASP.NET Core Web API host
-│   ├── FleetGo.Mobile.Core/   View models and session/token logic (no MAUI dependency)
+│   ├── FleetGo.Mobile.Core/   View models, session/token logic, offline store and sync (no MAUI dependency)
 │   └── FleetGo.Mobile/        .NET MAUI app (Android, iOS, Mac Catalyst)
 ├── tests/
 │   ├── FleetGo.API.Tests/     In-memory integration tests for the API

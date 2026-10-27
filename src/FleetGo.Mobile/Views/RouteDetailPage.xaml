@@ -2,12 +2,19 @@
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:viewmodels="clr-namespace:FleetGo.Mobile.Core.ViewModels;assembly=FleetGo.Mobile.Core"
+             xmlns:views="clr-namespace:FleetGo.Mobile.Views"
              xmlns:fleet="clr-namespace:FleetGo.Shared.Contracts.Fleet;assembly=FleetGo.Shared"
              x:Class="FleetGo.Mobile.Views.RouteDetailPage"
              x:DataType="viewmodels:RouteDetailViewModel"
              Title="Route">
 
-    <Grid RowDefinitions="Auto,Auto,Auto,*" Padding="16,12" RowSpacing="8">
+    <!-- Outer grid exists only to hang the shared sync banner above the page, so the
+         layout below it is untouched from Phase 4B. -->
+    <Grid RowDefinitions="Auto,*" Padding="16,12" RowSpacing="0">
+
+        <views:SyncBannerView Grid.Row="0" BindingContext="{Binding Sync}" />
+
+        <Grid Grid.Row="1" RowDefinitions="Auto,Auto,Auto,*" RowSpacing="8">
 
         <!-- Loading -->
         <ActivityIndicator Grid.Row="0"
@@ -124,6 +131,7 @@
                         </DataTemplate>
                     </CollectionView.ItemTemplate>
             </CollectionView>
+        </Grid>
         </Grid>
     </Grid>
 

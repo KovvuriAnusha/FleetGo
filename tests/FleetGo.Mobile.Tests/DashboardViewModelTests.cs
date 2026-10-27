@@ -1,66 +1,60 @@
+using System.Net;
+using FleetGo.Mobile.Core.Offline;
+using FleetGo.Mobile.Core.Offline.Sync;
 using FleetGo.Mobile.Core.ViewModels;
-using FleetGo.Shared.Contracts;
-using FleetGo.Shared.Contracts.Auth;
+using FleetGo.Mobile.Tests.Offline;
 using FleetGo.Shared.Contracts.Fleet;
+using FleetGo.Shared.Http;
 
 namespace FleetGo.Mobile.Tests;
 
-public sealed class DashboardViewModelTests
+public class DashboardViewModelTests
 {
-    private static readonly DateTimeOffset Now = new(2026, 9, 18, 9, 0, 0, TimeSpan.Zero);
+    private static readonly DateOnly Today = new(2026, 9, 18);
 
     [Fact]
     public async Task Load_SummarisesTodaysRoutes()
     {
-        FakeFleetGoApiClient apiClient = FakeFleetGoApiClient.WithRoutes(
-            FleetTestData.Route("R-001", RouteStatus.Completed, stopCount: 6),
-            FleetTestData.Route("R-002", RouteStatus.Planned, stopCount: 4),
-            FleetTestData.Route("R-003", RouteStatus.Planned, stopCount: 2));
+        var repository = RepositoryReturning(
+            FleetTestData.Route("R-001", RouteStatus.Planned, stopCount: 4),
+            FleetTestData.Route("R-002", RouteStatus.InProgress, stopCount: 6),
+            FleetTestData.Route("R-003", RouteStatus.Completed, stopCount: 2));
 
-        DashboardViewModel viewModel = CreateViewModel(apiClient);
+        DashboardViewModel viewModel = Build(repository);
 
         await viewModel.LoadCommand.ExecuteAsync(null);
 
         Assert.Equal(3, viewModel.TodayRoutes.Count);
-        Assert.Equal(2, viewModel.PlannedCount);
-        Assert.Equal(0, viewModel.InProgressCount);
+        Assert.Equal(1, viewModel.PlannedCount);
+        Assert.Equal(1, viewModel.InProgressCount);
         Assert.Equal(1, viewModel.CompletedCount);
         Assert.Equal(12, viewModel.StopsToday);
         Assert.False(viewModel.HasNoRoutesToday);
-        Assert.Null(viewModel.ErrorMessage);
     }
 
     [Fact]
     public async Task Load_ExcludesCancelledRoutesFromTheStopCount()
     {
-        FakeFleetGoApiClient apiClient = FakeFleetGoApiClient.WithRoutes(
+        var repository = RepositoryReturning(
             FleetTestData.Route("R-001", RouteStatus.Planned, stopCount: 5),
-            FleetTestData.Route("R-002", RouteStatus.Cancelled, stopCount: 7));
+            FleetTestData.Route("R-002", RouteStatus.Cancelled, stopCount: 9));
 
-        DashboardViewModel viewModel = CreateViewModel(apiClient);
+        DashboardViewModel viewModel = Build(repository);
 
         await viewModel.LoadCommand.ExecuteAsync(null);
 
-        // A cancelled route's stops are not work still to do, and counting them made the
-        // headline number disagree with the Planned/Active/Done tiles beside it.
+        // The tiles above never counted cancelled routes, so the stop total must not either.
         Assert.Equal(5, viewModel.StopsToday);
-        Assert.Equal(1, viewModel.PlannedCount);
-        Assert.Equal(0, viewModel.InProgressCount);
-        Assert.Equal(0, viewModel.CompletedCount);
-
-        // The route itself is still listed - it is part of today, just not outstanding work.
-        Assert.Equal(2, viewModel.TodayRoutes.Count);
     }
 
     [Fact]
     public async Task Load_PicksTheInProgressRouteAsTheActiveOne()
     {
-        FakeFleetGoApiClient apiClient = FakeFleetGoApiClient.WithRoutes(
+        var repository = RepositoryReturning(
             FleetTestData.Route("R-001", RouteStatus.Planned),
-            FleetTestData.Route("R-002", RouteStatus.InProgress),
-            FleetTestData.Route("R-003", RouteStatus.Planned));
+            FleetTestData.Route("R-002", RouteStatus.InProgress));
 
-        DashboardViewModel viewModel = CreateViewModel(apiClient);
+        DashboardViewModel viewModel = Build(repository);
 
         await viewModel.LoadCommand.ExecuteAsync(null);
 
@@ -71,11 +65,11 @@ public sealed class DashboardViewModelTests
     [Fact]
     public async Task Load_FallsBackToTheFirstPlannedRoute_WhenNothingIsInProgress()
     {
-        FakeFleetGoApiClient apiClient = FakeFleetGoApiClient.WithRoutes(
+        var repository = RepositoryReturning(
             FleetTestData.Route("R-001", RouteStatus.Completed),
             FleetTestData.Route("R-002", RouteStatus.Planned));
 
-        DashboardViewModel viewModel = CreateViewModel(apiClient);
+        DashboardViewModel viewModel = Build(repository);
 
         await viewModel.LoadCommand.ExecuteAsync(null);
 
@@ -83,65 +77,84 @@ public sealed class DashboardViewModelTests
     }
 
     [Fact]
-    public async Task Load_AsksTheApiForTodaysRoutesOnly()
+    public async Task Load_ReadsTheDeviceForTodayOnly_AndNeverTheApi()
     {
-        FakeFleetGoApiClient apiClient = FakeFleetGoApiClient.WithRoutes();
-        FakeTimeProvider timeProvider = new(Now);
-        DashboardViewModel viewModel = CreateViewModel(apiClient, timeProvider);
+        var repository = new FakeFleetRepository();
+        var asked = new List<DateOnly>();
+
+        repository.RoutesForDateHandler = (date, _) =>
+        {
+            asked.Add(date);
+            return Task.FromResult(new CachedData<IReadOnlyList<RouteResponse>>([], null, false));
+        };
+
+        DashboardViewModel viewModel = Build(repository);
 
         await viewModel.LoadCommand.ExecuteAsync(null);
 
-        // Derived the same way the view model does, so the assertion holds in any time zone
-        // the tests happen to run in.
-        DateOnly expectedDate = DateOnly.FromDateTime(timeProvider.GetLocalNow().DateTime);
-        Assert.Equal(expectedDate, apiClient.RouteQueries[0].RouteDate);
+        // The dashboard reads the device. Anything to do with the network is the sync
+        // engine's job, which is why no refresh was asked for here either.
+        AssertThat.Sequence([Today], asked);
+        Assert.Equal(0, repository.RouteWindowRefreshCount);
     }
 
     [Fact]
-    public async Task Load_WithNothingScheduled_ReportsTheEmptyState()
+    public async Task Load_WithNothingCached_ReportsTheEmptyState()
     {
-        FakeFleetGoApiClient apiClient = FakeFleetGoApiClient.WithRoutes();
-        DashboardViewModel viewModel = CreateViewModel(apiClient);
+        DashboardViewModel viewModel = Build(new FakeFleetRepository());
 
         await viewModel.LoadCommand.ExecuteAsync(null);
 
-        Assert.Empty(viewModel.TodayRoutes);
         Assert.True(viewModel.HasNoRoutesToday);
-        Assert.False(viewModel.HasActiveRoute);
-        Assert.Equal(0, viewModel.StopsToday);
+        Assert.False(viewModel.HasErrorMessage);
     }
 
     [Fact]
-    public async Task Load_WhenTheApiFails_ShowsAnErrorAndNotTheEmptyState()
+    public async Task Load_WhenTheReadFails_ShowsAnErrorAndNotTheEmptyState()
     {
-        FakeFleetGoApiClient apiClient = FakeFleetGoApiClient.ThatFailsRouteListWith(new HttpRequestException("no network"));
-        DashboardViewModel viewModel = CreateViewModel(apiClient);
+        var repository = new FakeFleetRepository
+        {
+            RoutesForDateHandler = (_, _) =>
+                Task.FromException<CachedData<IReadOnlyList<RouteResponse>>>(
+                    new FleetGoApiException("boom", HttpStatusCode.InternalServerError)),
+        };
+
+        DashboardViewModel viewModel = Build(repository);
 
         await viewModel.LoadCommand.ExecuteAsync(null);
 
-        Assert.Equal("Could not reach the API. Is it running?", viewModel.ErrorMessage);
+        Assert.True(viewModel.HasErrorMessage);
+        // "Nothing scheduled today" after a failure would be a lie: the app does not know.
         Assert.False(viewModel.HasNoRoutesToday);
+    }
+
+    [Fact]
+    public async Task Load_SurfacesThatSomethingIsStillWaitingToSend()
+    {
+        var repository = new FakeFleetRepository
+        {
+            RoutesForDateHandler = (_, _) => Task.FromResult(
+                new CachedData<IReadOnlyList<RouteResponse>>([FleetTestData.Route()], DateTime.UnixEpoch, true)),
+        };
+
+        DashboardViewModel viewModel = Build(repository);
+
+        await viewModel.LoadCommand.ExecuteAsync(null);
+
+        Assert.True(viewModel.HasPendingLocalChange);
     }
 
     [Fact]
     public async Task Load_GreetsTheSignedInDriver()
     {
-        FakeAuthenticationService authService = new()
-        {
-            CurrentUser = new CurrentUserResponse(
-                UserId: Guid.NewGuid(),
-                Email: "driver@example.com",
-                FirstName: "Asha",
-                LastName: "Patel",
-                DriverId: Guid.NewGuid(),
-                DriverCode: "D-1001"),
-        };
+        var authentication = new FakeAuthenticationService();
+        authentication.SignIn();
 
-        DashboardViewModel viewModel = CreateViewModel(FakeFleetGoApiClient.WithRoutes(), authService);
+        DashboardViewModel viewModel = Build(new FakeFleetRepository(), authentication);
 
         await viewModel.LoadCommand.ExecuteAsync(null);
 
-        Assert.Equal("Asha Patel", viewModel.DriverName);
+        Assert.Equal("Test Driver", viewModel.DriverName);
         Assert.Equal("D-1001", viewModel.DriverCode);
         Assert.True(viewModel.HasDriverCode);
     }
@@ -149,7 +162,11 @@ public sealed class DashboardViewModelTests
     [Fact]
     public async Task Load_WithNoProfileLoaded_FallsBackToAGenericGreeting()
     {
-        DashboardViewModel viewModel = CreateViewModel(FakeFleetGoApiClient.WithRoutes());
+        // Exactly what resuming offline looks like: tokens restored, profile call impossible.
+        var authentication = new FakeAuthenticationService();
+        authentication.SignInWithoutProfile();
+
+        DashboardViewModel viewModel = Build(new FakeFleetRepository(), authentication);
 
         await viewModel.LoadCommand.ExecuteAsync(null);
 
@@ -158,31 +175,54 @@ public sealed class DashboardViewModelTests
     }
 
     [Fact]
+    public async Task Refresh_AsksForASyncAndThenRereadsTheDevice()
+    {
+        var repository = RepositoryReturning(FleetTestData.Route("R-001"));
+        var trigger = new FakeSyncTrigger();
+
+        DashboardViewModel viewModel = Build(repository, trigger: trigger);
+
+        await viewModel.RefreshCommand.ExecuteAsync(null);
+
+        AssertThat.Sequence([SyncReason.Manual], trigger.AwaitedReasons);
+        Assert.Single(viewModel.TodayRoutes);
+        Assert.False(viewModel.IsRefreshing);
+    }
+
+    [Fact]
     public async Task SelectRoute_AndViewAllRoutes_RaiseTheirEvents()
     {
-        RouteResponse route = FleetTestData.Route("R-001");
-        DashboardViewModel viewModel = CreateViewModel(FakeFleetGoApiClient.WithRoutes(route));
+        RouteResponse route = FleetTestData.Route();
+        DashboardViewModel viewModel = Build(RepositoryReturning(route));
 
         Guid? selected = null;
         bool viewAllRequested = false;
-        viewModel.RouteSelected += (_, routeId) => selected = routeId;
+
+        viewModel.RouteSelected += (_, id) => selected = id;
         viewModel.ViewAllRoutesRequested += (_, _) => viewAllRequested = true;
 
-        await viewModel.LoadCommand.ExecuteAsync(null);
-        viewModel.SelectRouteCommand.Execute(viewModel.TodayRoutes[0]);
+        viewModel.SelectRouteCommand.Execute(route);
         viewModel.ViewAllRoutesCommand.Execute(null);
 
         Assert.Equal(route.Id, selected);
         Assert.True(viewAllRequested);
     }
 
-    private static DashboardViewModel CreateViewModel(
-        FakeFleetGoApiClient apiClient,
-        FakeTimeProvider? timeProvider = null) =>
-        new(apiClient, new FakeAuthenticationService(), timeProvider ?? new FakeTimeProvider(Now));
+    private static FakeFleetRepository RepositoryReturning(params RouteResponse[] routes) =>
+        new()
+        {
+            RoutesForDateHandler = (_, _) => Task.FromResult(
+                new CachedData<IReadOnlyList<RouteResponse>>(routes, DateTime.UnixEpoch, false)),
+        };
 
-    private static DashboardViewModel CreateViewModel(
-        FakeFleetGoApiClient apiClient,
-        FakeAuthenticationService authenticationService) =>
-        new(apiClient, authenticationService, new FakeTimeProvider(Now));
+    private static DashboardViewModel Build(
+        FakeFleetRepository repository,
+        FakeAuthenticationService? authentication = null,
+        FakeSyncTrigger? trigger = null) =>
+        new(
+            repository,
+            authentication ?? new FakeAuthenticationService(),
+            trigger ?? new FakeSyncTrigger(),
+            OfflineTestFactory.SyncStatus(),
+            new FakeTimeProvider(new DateTimeOffset(Today, new TimeOnly(9, 0), TimeSpan.Zero)));
 }

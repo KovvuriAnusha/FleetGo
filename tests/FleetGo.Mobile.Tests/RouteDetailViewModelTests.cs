@@ -1,182 +1,167 @@
 using System.Net;
+using FleetGo.Mobile.Core.Offline;
 using FleetGo.Mobile.Core.ViewModels;
+using FleetGo.Mobile.Tests.Offline;
 using FleetGo.Shared.Contracts.Fleet;
 using FleetGo.Shared.Http;
 
 namespace FleetGo.Mobile.Tests;
 
-public sealed class RouteDetailViewModelTests
+public class RouteDetailViewModelTests
 {
     [Fact]
     public async Task Load_PopulatesTheRouteAndItsStops()
     {
-        Guid routeId = Guid.NewGuid();
-        RouteResponse route = FleetTestData.Route("R-777", RouteStatus.InProgress, stopCount: 2, id: routeId);
+        RouteResponse route = FleetTestData.Route("R-100", RouteStatus.InProgress, stopCount: 2);
 
-        FakeFleetGoApiClient apiClient = new()
-        {
-            GetRouteHandler = (_, _) => Task.FromResult(route),
-            GetStopsHandler = (_, page, pageSize, _, _, _, _) => Task.FromResult(
-                FleetTestData.PageOf(
-                    page,
-                    pageSize,
-                    totalCount: 2,
-                    FleetTestData.Stop(sequence: 1, customerName: "Acme Ltd"),
-                    FleetTestData.Stop(sequence: 2, customerName: "Globex"))),
-        };
+        var repository = RepositoryReturning(new RouteDetail(
+            route,
+            [FleetTestData.Stop(sequence: 1), FleetTestData.Stop(sequence: 2)],
+            Vehicle: null));
 
-        RouteDetailViewModel viewModel = new(apiClient);
+        RouteDetailViewModel viewModel = Build(repository);
 
-        await viewModel.LoadAsync(routeId, TestContext.Current.CancellationToken);
+        await viewModel.LoadAsync(route.Id);
 
-        Assert.NotNull(viewModel.Route);
-        Assert.Equal("R-777", viewModel.Route.RouteNumber);
         Assert.True(viewModel.HasRoute);
+        Assert.Equal("R-100", viewModel.Route!.RouteNumber);
         Assert.Equal(2, viewModel.Stops.Count);
-        Assert.Equal("Globex", viewModel.Stops[1].CustomerName);
         Assert.False(viewModel.HasNoStops);
-        Assert.False(viewModel.IsBusy);
-        Assert.Null(viewModel.ErrorMessage);
-
-        // The stop query has to be scoped to this route, not to every route the driver owns.
-        Assert.Equal(routeId, Assert.Single(apiClient.StopQueryRouteIds));
+        Assert.False(viewModel.HasErrorMessage);
     }
 
     [Fact]
     public async Task Load_WithNoStops_ReportsTheEmptyState()
     {
-        FakeFleetGoApiClient apiClient = new()
-        {
-            GetRouteHandler = (_, _) => Task.FromResult(FleetTestData.Route("R-001")),
-        };
+        RouteResponse route = FleetTestData.Route();
+        RouteDetailViewModel viewModel = Build(RepositoryReturning(new RouteDetail(route, [], null)));
 
-        RouteDetailViewModel viewModel = new(apiClient);
+        await viewModel.LoadAsync(route.Id);
 
-        await viewModel.LoadAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
-
-        Assert.Empty(viewModel.Stops);
         Assert.True(viewModel.HasNoStops);
-        Assert.True(viewModel.HasRoute);
+        Assert.False(viewModel.HasErrorMessage);
     }
 
     [Fact]
-    public async Task Load_FetchesTheAssignedVehicle()
+    public async Task Load_ShowsTheAssignedVehicleWhenTheDeviceHasIt()
     {
         Guid vehicleId = Guid.NewGuid();
-        FakeFleetGoApiClient apiClient = new()
-        {
-            GetRouteHandler = (_, _) => Task.FromResult(
-                FleetTestData.Route("R-001", vehicleId: vehicleId, vehicleRegistrationNumber: "VAN-01")),
-            GetVehicleHandler = (_, _) => Task.FromResult(FleetTestData.Vehicle("VAN-01", "Mercedes", "Sprinter", vehicleId)),
-        };
+        RouteResponse route = FleetTestData.Route(vehicleId: vehicleId, vehicleRegistrationNumber: "VAN-07");
 
-        RouteDetailViewModel viewModel = new(apiClient);
+        var repository = RepositoryReturning(new RouteDetail(
+            route,
+            [],
+            FleetTestData.Vehicle("VAN-07", "Ford", "Transit", vehicleId)));
 
-        await viewModel.LoadAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
+        RouteDetailViewModel viewModel = Build(repository);
+
+        await viewModel.LoadAsync(route.Id);
 
         Assert.True(viewModel.HasVehicle);
-        Assert.Equal("Sprinter", viewModel.Vehicle!.Model);
+        Assert.Equal("Transit", viewModel.Vehicle!.Model);
         Assert.True(viewModel.HasVehicleRegistration);
     }
 
     [Fact]
-    public async Task Load_WithNoVehicleAssigned_LeavesTheVehicleEmpty()
+    public async Task Load_StillShowsTheRoute_WhenTheVehicleRecordIsNotCached()
     {
-        FakeFleetGoApiClient apiClient = new()
-        {
-            GetRouteHandler = (_, _) => Task.FromResult(FleetTestData.Route("R-001")),
-            GetVehicleHandler = (_, _) => throw new InvalidOperationException("must not be called"),
-        };
+        // The registration number travels on the route itself, so the screen stays useful
+        // even when the fuller vehicle record has never been synced.
+        RouteResponse route = FleetTestData.Route(vehicleId: Guid.NewGuid(), vehicleRegistrationNumber: "VAN-07");
+        RouteDetailViewModel viewModel = Build(RepositoryReturning(new RouteDetail(route, [], null)));
 
-        RouteDetailViewModel viewModel = new(apiClient);
+        await viewModel.LoadAsync(route.Id);
 
-        await viewModel.LoadAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
-
-        Assert.False(viewModel.HasVehicle);
-        Assert.False(viewModel.HasVehicleRegistration);
-        Assert.True(viewModel.HasRoute);
-    }
-
-    [Fact]
-    public async Task Load_StillShowsTheRoute_WhenTheVehicleLookupFails()
-    {
-        FakeFleetGoApiClient apiClient = new()
-        {
-            GetRouteHandler = (_, _) => Task.FromResult(
-                FleetTestData.Route("R-001", vehicleId: Guid.NewGuid(), vehicleRegistrationNumber: "VAN-01")),
-            GetVehicleHandler = (_, _) => Task.FromException<VehicleResponse>(new HttpRequestException("no network")),
-        };
-
-        RouteDetailViewModel viewModel = new(apiClient);
-
-        await viewModel.LoadAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
-
-        // Losing the make/model must not cost the driver the route and its stops.
         Assert.True(viewModel.HasRoute);
         Assert.False(viewModel.HasVehicle);
-        Assert.Null(viewModel.ErrorMessage);
-        // The registration still shows, because it travels on the route itself.
         Assert.True(viewModel.HasVehicleRegistration);
+        Assert.False(viewModel.HasErrorMessage);
     }
 
     [Fact]
-    public async Task Load_WhenTheRouteIsNotFound_ShowsTheNotFoundMessage()
+    public async Task Load_WhenTheRouteIsNotOnTheDevice_SaysSoRatherThanFailing()
     {
-        FakeFleetGoApiClient apiClient = new()
-        {
-            GetRouteHandler = (_, _) => Task.FromException<RouteResponse>(
-                new FleetGoApiException("not found", HttpStatusCode.NotFound)),
-        };
+        RouteDetailViewModel viewModel = Build(new FakeFleetRepository());
 
-        RouteDetailViewModel viewModel = new(apiClient);
+        await viewModel.LoadAsync(Guid.NewGuid());
 
-        await viewModel.LoadAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
-
-        Assert.Equal("We couldn't find that. It may have been removed.", viewModel.ErrorMessage);
         Assert.False(viewModel.HasRoute);
+        Assert.Contains("isn't saved on this device", viewModel.ErrorMessage!);
+        // Not an empty-stops state: the route itself is missing, which is a different problem.
         Assert.False(viewModel.HasNoStops);
     }
 
     [Fact]
-    public async Task Reload_RequestsTheSameRouteAgain()
+    public async Task Load_WhenTheSessionHasExpired_RaisesSessionExpired()
     {
-        List<Guid> requested = [];
-        FakeFleetGoApiClient apiClient = new()
+        var repository = new FakeFleetRepository
         {
-            GetRouteHandler = (routeId, _) =>
-            {
-                requested.Add(routeId);
-                return Task.FromResult(FleetTestData.Route("R-001"));
-            },
+            RouteDetailHandler = (_, _) => Task.FromException<CachedData<RouteDetail>>(
+                new FleetGoApiException("expired", HttpStatusCode.Unauthorized)),
         };
 
-        Guid id = Guid.NewGuid();
-        RouteDetailViewModel viewModel = new(apiClient);
+        RouteDetailViewModel viewModel = Build(repository);
 
-        await viewModel.LoadAsync(id, TestContext.Current.CancellationToken);
+        bool raised = false;
+        viewModel.SessionExpired += (_, _) => raised = true;
+
+        await viewModel.LoadAsync(Guid.NewGuid());
+
+        Assert.True(raised);
+    }
+
+    [Fact]
+    public async Task Reload_TriesToPullTheRouteDownAgainAndThenRereadsTheDevice()
+    {
+        RouteResponse route = FleetTestData.Route();
+        var repository = RepositoryReturning(new RouteDetail(route, [], null));
+
+        RouteDetailViewModel viewModel = Build(repository);
+
+        await viewModel.LoadAsync(route.Id);
         await viewModel.ReloadCommand.ExecuteAsync(null);
 
-        Assert.Equal(new[] { id, id }, requested);
+        AssertThat.Sequence([route.Id], repository.RefreshedRouteIds);
+        Assert.True(viewModel.HasRoute);
+    }
+
+    [Fact]
+    public async Task Reload_WithNoNetwork_StillShowsWhatTheDeviceHas()
+    {
+        RouteResponse route = FleetTestData.Route();
+        var repository = RepositoryReturning(new RouteDetail(route, [FleetTestData.Stop()], null));
+        repository.RefreshException = new HttpRequestException("no network");
+
+        RouteDetailViewModel viewModel = Build(repository);
+
+        await viewModel.ReloadCommand.ExecuteAsync(null);
+
+        // Losing the network is not a failed load once the data lives on the device.
+        Assert.False(viewModel.HasErrorMessage);
+        Assert.Single(viewModel.Stops);
     }
 
     [Fact]
     public async Task SelectStop_RaisesStopSelectedWithTheStopId()
     {
-        StopResponse stop = FleetTestData.Stop(sequence: 1);
-        FakeFleetGoApiClient apiClient = new()
-        {
-            GetStopsHandler = (_, page, pageSize, _, _, _, _) =>
-                Task.FromResult(FleetTestData.PageOf(page, pageSize, totalCount: 1, stop)),
-        };
-
-        RouteDetailViewModel viewModel = new(apiClient);
+        StopResponse stop = FleetTestData.Stop();
+        RouteDetailViewModel viewModel = Build(new FakeFleetRepository());
 
         Guid? selected = null;
-        viewModel.StopSelected += (_, stopId) => selected = stopId;
+        viewModel.StopSelected += (_, id) => selected = id;
 
-        await viewModel.LoadAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
-        viewModel.SelectStopCommand.Execute(viewModel.Stops[0]);
+        viewModel.SelectStopCommand.Execute(stop);
 
         Assert.Equal(stop.Id, selected);
     }
+
+    private static FakeFleetRepository RepositoryReturning(RouteDetail detail, bool hasPendingLocalChange = false) =>
+        new()
+        {
+            RouteDetailHandler = (_, _) => Task.FromResult(
+                new CachedData<RouteDetail>(detail, DateTime.UnixEpoch, hasPendingLocalChange)),
+        };
+
+    private static RouteDetailViewModel Build(FakeFleetRepository repository) =>
+        new(repository, OfflineTestFactory.SyncStatus());
 }

@@ -1,11 +1,11 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using FleetGo.Mobile.Core.Offline;
+using FleetGo.Mobile.Core.Offline.Sync;
 using FleetGo.Mobile.Core.Session;
-using FleetGo.Shared.Contracts;
 using FleetGo.Shared.Contracts.Auth;
 using FleetGo.Shared.Contracts.Fleet;
-using FleetGo.Shared.Http;
 
 namespace FleetGo.Mobile.Core.ViewModels;
 
@@ -13,34 +13,39 @@ namespace FleetGo.Mobile.Core.ViewModels;
 /// Backs the driver dashboard: who is signed in, and what today looks like.
 /// <para>
 /// There is no dashboard aggregation endpoint in Phase 4A and this does not pretend
-/// otherwise - the summary is composed client-side from a single call for today's routes
-/// (<c>GET /api/v1/fleet/routes?routeDate=...</c>), and the driver's identity comes from the
-/// session that is already loaded. Nothing here needs an endpoint that does not exist.
+/// otherwise - the summary is composed client-side from today's routes, and the driver's
+/// identity comes from the session that is already loaded.
+/// </para>
+/// <para>
+/// Since Phase 5 those routes come out of the device's own database rather than off the wire
+/// (see <see cref="IFleetRepository"/>), so the dashboard opens instantly, works in a
+/// basement, and says plainly - through the shared banner - how current what it is showing
+/// actually is. Pull-to-refresh asks for a sync; it does not fetch a page itself.
 /// </para>
 /// </summary>
 public sealed partial class DashboardViewModel : FleetPageViewModel
 {
-    /// <summary>
-    /// One day's routes for one driver fit a single page many times over; the API caps a
-    /// page at 100, which is the ceiling this summary is accurate up to.
-    /// </summary>
-    private const int TodayRoutePageSize = 100;
-
-    private readonly IFleetGoApiClient _apiClient;
+    private readonly IFleetRepository _repository;
     private readonly IAuthenticationService _authenticationService;
+    private readonly ISyncTrigger _syncTrigger;
     private readonly TimeProvider _timeProvider;
 
     public DashboardViewModel(
-        IFleetGoApiClient apiClient,
+        IFleetRepository repository,
         IAuthenticationService authenticationService,
+        ISyncTrigger syncTrigger,
+        SyncStatusViewModel sync,
         TimeProvider timeProvider)
+        : base(sync)
     {
-        ArgumentNullException.ThrowIfNull(apiClient);
+        ArgumentNullException.ThrowIfNull(repository);
         ArgumentNullException.ThrowIfNull(authenticationService);
+        ArgumentNullException.ThrowIfNull(syncTrigger);
         ArgumentNullException.ThrowIfNull(timeProvider);
 
-        _apiClient = apiClient;
+        _repository = repository;
         _authenticationService = authenticationService;
+        _syncTrigger = syncTrigger;
         _timeProvider = timeProvider;
     }
 
@@ -85,7 +90,7 @@ public sealed partial class DashboardViewModel : FleetPageViewModel
     [NotifyPropertyChangedFor(nameof(HasActiveRoute))]
     public partial RouteResponse? ActiveRoute { get; set; }
 
-    /// <summary>True once the load finished and there are genuinely no routes for today.</summary>
+    /// <summary>True once the load finished and there are genuinely no routes cached for today.</summary>
     [ObservableProperty]
     public partial bool HasNoRoutesToday { get; set; }
 
@@ -100,7 +105,11 @@ public sealed partial class DashboardViewModel : FleetPageViewModel
     [RelayCommand]
     private Task LoadAsync(CancellationToken cancellationToken) => LoadDashboardAsync(cancellationToken, showBusyIndicator: true);
 
-    /// <summary>Pull-to-refresh: the same load without the full-page spinner.</summary>
+    /// <summary>
+    /// Pull-to-refresh. Asks the sync engine for a run and then re-reads the device - so a
+    /// refresh with no signal still repaints from the cache instead of failing, and a refresh
+    /// with signal also gets whatever was queued out of the door.
+    /// </summary>
     [RelayCommand]
     private async Task RefreshAsync(CancellationToken cancellationToken)
     {
@@ -108,6 +117,7 @@ public sealed partial class DashboardViewModel : FleetPageViewModel
 
         try
         {
+            await _syncTrigger.SyncNowAsync(SyncReason.Manual, cancellationToken);
             await LoadDashboardAsync(cancellationToken, showBusyIndicator: false);
         }
         finally
@@ -138,21 +148,17 @@ public sealed partial class DashboardViewModel : FleetPageViewModel
         bool succeeded = await RunAsync(
             async token =>
             {
-                PagedResponse<RouteResponse> routes = await _apiClient.GetRoutesAsync(
-                    page: 1,
-                    pageSize: TodayRoutePageSize,
-                    routeDate: today,
-                    sort: "routeNumber",
-                    cancellationToken: token);
+                CachedData<IReadOnlyList<RouteResponse>> cached = await _repository.GetRoutesForDateAsync(today, token);
 
                 TodayRoutes.Clear();
 
-                foreach (RouteResponse route in routes.Items)
+                foreach (RouteResponse route in cached.Value)
                 {
                     TodayRoutes.Add(route);
                 }
 
-                Summarise(routes.Items);
+                HasPendingLocalChange = cached.HasPendingLocalChange;
+                Summarise(cached.Value);
             },
             cancellationToken,
             showBusyIndicator);
@@ -163,7 +169,8 @@ public sealed partial class DashboardViewModel : FleetPageViewModel
     private void ApplyCurrentUser(CurrentUserResponse? user)
     {
         // A dashboard that says "Welcome, " with nothing after it is worse than one that
-        // just says "Driver" until the profile is there.
+        // just says "Driver" until the profile is there. This also covers resuming offline,
+        // where the session restored but the profile call could not run.
         DriverName = user is null ? "Driver" : $"{user.FirstName} {user.LastName}".Trim();
         DriverCode = user?.DriverCode;
     }

@@ -1,9 +1,9 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using FleetGo.Shared.Contracts;
+using FleetGo.Mobile.Core.Offline;
+using FleetGo.Mobile.Core.Offline.Sync;
 using FleetGo.Shared.Contracts.Fleet;
-using FleetGo.Shared.Http;
 
 namespace FleetGo.Mobile.Core.ViewModels;
 
@@ -12,23 +12,39 @@ public sealed record RouteStatusFilterOption(string Label, RouteStatus? Value);
 
 /// <summary>
 /// Backs the route list: the driver's own routes, newest first, filtered by status and paged
-/// on demand. Every call is scoped to the caller server-side, so there is no driver id to
-/// pass or to get wrong here.
+/// on demand.
+/// <para>
+/// Since Phase 5 the paging is over what has been synced to the device, not over the API.
+/// That is a real behaviour change and worth being clear about: <see cref="TotalCount"/> is
+/// how many routes this device holds for the filter, so the list stops where the sync window
+/// stops rather than scrolling into rows it cannot fetch without a network. The window is
+/// defined by <c>FleetRepository</c>, and the banner says when it was last refreshed.
+/// </para>
 /// </summary>
 public sealed partial class RouteListViewModel : FleetPageViewModel
 {
-    /// <summary>Matches the API's default page size; the endpoint caps any request at 100.</summary>
+    /// <summary>How many rows a page of the list holds. Matches the sync window's page size.</summary>
     private const int RoutePageSize = 20;
 
-    /// <summary>Newest route first - the one a driver is most likely to be looking for.</summary>
-    private const string SortNewestFirst = "-routeDate";
+    private readonly IFleetRepository _repository;
+    private readonly ISyncTrigger _syncTrigger;
 
-    private readonly IFleetGoApiClient _apiClient;
+    /// <summary>
+    /// Bumped by every first-page load. A load-more captures the generation it was started
+    /// under and discards its response if that no longer matches, because a refresh or a
+    /// filter change in the meantime means those rows belong to a result set that is no
+    /// longer on screen.
+    /// </summary>
+    private int _loadGeneration;
 
-    public RouteListViewModel(IFleetGoApiClient apiClient)
+    public RouteListViewModel(IFleetRepository repository, ISyncTrigger syncTrigger, SyncStatusViewModel sync)
+        : base(sync)
     {
-        ArgumentNullException.ThrowIfNull(apiClient);
-        _apiClient = apiClient;
+        ArgumentNullException.ThrowIfNull(repository);
+        ArgumentNullException.ThrowIfNull(syncTrigger);
+
+        _repository = repository;
+        _syncTrigger = syncTrigger;
 
         StatusFilterOptions =
         [
@@ -61,7 +77,7 @@ public sealed partial class RouteListViewModel : FleetPageViewModel
     [ObservableProperty]
     public partial bool IsRefreshing { get; set; }
 
-    /// <summary>Total routes matching the current filter, across all pages - not the number loaded so far.</summary>
+    /// <summary>Routes on this device matching the current filter, across all pages - not the number loaded so far.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanLoadMore))]
     public partial int TotalCount { get; set; }
@@ -76,22 +92,11 @@ public sealed partial class RouteListViewModel : FleetPageViewModel
 
     public bool CanLoadMore => !IsLoadingMore && Routes.Count < TotalCount;
 
-    /// <summary>The page number most recently loaded; the next load-more asks for this plus one.</summary>
-    private int LoadedPage { get; set; }
-
-    /// <summary>
-    /// Bumped by every first-page load. A load-more captures the generation it was started
-    /// under and discards its response if that no longer matches, because a refresh or a
-    /// filter change in the meantime means those rows belong to a result set that is no
-    /// longer on screen.
-    /// </summary>
-    private int _loadGeneration;
-
-    /// <summary>First load, and the retry action after a failure. Always starts again from page 1.</summary>
+    /// <summary>First load, and the retry action after a failure. Always starts again from the top.</summary>
     [RelayCommand]
     private Task LoadAsync(CancellationToken cancellationToken) => LoadFirstPageAsync(cancellationToken, showBusyIndicator: true);
 
-    /// <summary>Pull-to-refresh. Same query as <see cref="LoadAsync"/>, without the full-page spinner.</summary>
+    /// <summary>Pull-to-refresh: sync, then re-read the device from the top.</summary>
     [RelayCommand]
     private async Task RefreshAsync(CancellationToken cancellationToken)
     {
@@ -99,6 +104,7 @@ public sealed partial class RouteListViewModel : FleetPageViewModel
 
         try
         {
+            await _syncTrigger.SyncNowAsync(SyncReason.Manual, cancellationToken);
             await LoadFirstPageAsync(cancellationToken, showBusyIndicator: false);
         }
         finally
@@ -122,18 +128,18 @@ public sealed partial class RouteListViewModel : FleetPageViewModel
         IsLoadingMore = true;
 
         int generation = _loadGeneration;
+        int skip = Routes.Count;
 
         try
         {
             await RunAsync(
                 async token =>
                 {
-                    PagedResponse<RouteResponse> page = await _apiClient.GetRoutesAsync(
-                        page: LoadedPage + 1,
-                        pageSize: RoutePageSize,
-                        status: SelectedStatusFilter.Value,
-                        sort: SortNewestFirst,
-                        cancellationToken: token);
+                    CachedData<RoutePage> page = await _repository.GetRoutesAsync(
+                        SelectedStatusFilter.Value,
+                        skip,
+                        RoutePageSize,
+                        token);
 
                     // A refresh or filter change landed while this page was in flight: these
                     // rows, and the paging position they imply, belong to the previous query.
@@ -142,13 +148,13 @@ public sealed partial class RouteListViewModel : FleetPageViewModel
                         return;
                     }
 
-                    foreach (RouteResponse route in page.Items)
+                    foreach (RouteResponse route in page.Value.Items)
                     {
                         Routes.Add(route);
                     }
 
-                    LoadedPage = page.Page;
-                    TotalCount = page.TotalCount;
+                    TotalCount = page.Value.TotalCount;
+                    HasPendingLocalChange |= page.HasPendingLocalChange;
                 },
                 cancellationToken,
                 showBusyIndicator: false);
@@ -176,12 +182,11 @@ public sealed partial class RouteListViewModel : FleetPageViewModel
         bool succeeded = await RunAsync(
             async token =>
             {
-                PagedResponse<RouteResponse> page = await _apiClient.GetRoutesAsync(
-                    page: 1,
-                    pageSize: RoutePageSize,
-                    status: SelectedStatusFilter.Value,
-                    sort: SortNewestFirst,
-                    cancellationToken: token);
+                CachedData<RoutePage> page = await _repository.GetRoutesAsync(
+                    SelectedStatusFilter.Value,
+                    skip: 0,
+                    RoutePageSize,
+                    token);
 
                 // Superseded by a newer first-page load (two refreshes racing): let the newer
                 // one own the list rather than overwriting it with an older result.
@@ -190,18 +195,18 @@ public sealed partial class RouteListViewModel : FleetPageViewModel
                     return;
                 }
 
-                // Replaced only after the call succeeds: a failed refresh should leave the
+                // Replaced only after the read succeeds: a failed refresh should leave the
                 // routes already on screen alone rather than blanking the list behind an
                 // error message.
                 Routes.Clear();
 
-                foreach (RouteResponse route in page.Items)
+                foreach (RouteResponse route in page.Value.Items)
                 {
                     Routes.Add(route);
                 }
 
-                LoadedPage = page.Page;
-                TotalCount = page.TotalCount;
+                TotalCount = page.Value.TotalCount;
+                HasPendingLocalChange = page.HasPendingLocalChange;
             },
             cancellationToken,
             showBusyIndicator);

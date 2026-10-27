@@ -112,6 +112,11 @@
          AndroidBiometricAuthenticator.cs's BiometricManager/BiometricPrompt usage needed
          no changes either). -->
     <PackageReference Include="Xamarin.AndroidX.Biometric" Version="1.1.0.33" />
+    <!-- Security pin for the Android native SQLite build (CVE-2025-6965 / NU1903). The
+         reasoning, and why raising SQLitePCLRaw.bundle_green cannot fix this, is written up
+         once in FleetGo.Mobile.Core.csproj; this is the same pin for the package bundle_green
+         uses on Android specifically. Both must move together. -->
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3.android" Version="2.1.13" />
   </ItemGroup>
 
   <ItemGroup>

@@ -152,6 +152,19 @@ substitutes a fixed test-only signing key and an in-memory SQLite database (kept
 lifetime of each test class) for exactly this reason - see that file's comments for why SQLite
 rather than the EF Core InMemory provider.
 
+### Phase 5's offline tests
+
+`FleetGo.Mobile.Tests` creates real SQLite databases in temporary files (one per test, deleted
+afterwards) rather than mocking the local store. Nothing extra needs installing:
+`SQLitePCLRaw.bundle_green` brings a native SQLite build with it, so the tests run on macOS,
+Linux and Windows agents alike with no emulator and no system SQLite. That native package is
+pinned to 2.1.13 rather than taken from the bundle - see "A pinned native SQLite" in
+[docs/architecture.md](architecture.md) for why, and do not drop the pin without checking
+`dotnet restore` for NU1903.
+
+If a run leaves stray directories behind after an interrupted test, they are all under
+`<temp>/fleetgo-tests/` and safe to delete.
+
 ### "Testing with VSTest target is no longer supported by Microsoft.Testing.Platform"
 
 This means `dotnet test` ran in VSTest mode against an MTP-based test project. The .NET 10
@@ -198,6 +211,29 @@ The mobile app resolves the API address per platform in `src/FleetGo.Mobile/Conf
 | iOS simulator | `http://localhost:5266` | Shares the host network stack |
 | Mac Catalyst | `http://localhost:5266` | Runs on the host |
 | Physical device | Your machine's LAN IP | Edit `ApiSettings`; device and machine must be on the same network |
+
+## The offline database on a device
+
+Since Phase 5 the app keeps a SQLite database of the driver's working day under the platform's
+private application data directory (`FileSystem.AppDataDirectory`), named `fleetgo.local.db3`.
+
+What it holds: routes, stops, packages, the vehicles and customers those refer to, and the queue
+of changes not yet accepted by the server. What it never holds: access tokens, refresh tokens,
+passwords or any other authentication secret - those stay in `SecureStorage` (Keychain / Android
+Keystore), exactly as they did before.
+
+Things worth knowing while developing against it:
+
+- **It is per driver.** Signing in as a different driver wipes it first; signing out wipes it
+  outright. If you are switching between seeded drivers, expect the first read after a switch to
+  come back empty until a sync has run.
+- **Deleting it is safe.** Uninstalling the app, or clearing its storage, loses only cached data
+  and any unsent changes. Everything else re-syncs.
+- **To see it behave offline**, turn off wifi and mobile data on the emulator/simulator rather
+  than stopping the API: the app distinguishes "no network" from "the API answered with an
+  error", and stopping the API exercises the second path, not the first.
+- **Android backups are already disabled** (Phase 4C), so neither this database nor
+  `SecureStorage` travels off the device through a cloud backup.
 
 ## "The app says it cannot reach the API"
 

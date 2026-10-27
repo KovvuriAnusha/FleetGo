@@ -26,6 +26,60 @@
   <ItemGroup>
     <!-- MVVM source generators: ObservableObject, [ObservableProperty], [RelayCommand]. -->
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+
+    <!--
+      Phase 5 (offline first): the on-device cache and the outbox live in SQLite.
+
+      sqlite-net-pcl is the library the .NET MAUI documentation uses for local storage. It
+      is a small object mapper over raw SQLite rather than a second ORM: attributes on the
+      record types in Offline/Models, no change tracking, no migrations engine. That is a
+      deliberate choice over EF Core here - the API already owns EF Core against SQL Server,
+      and pulling the same stack onto the device would mean a second DbContext, a second set
+      of migrations and a much larger app payload for what is, on the client, seven flat
+      tables.
+
+      SQLitePCLRaw.bundle_green supplies the SQLite provider. "green" means: use the
+      bundled e_sqlite3 build everywhere except Apple platforms, where it binds the system
+      SQLite the OS already ships. That is what lets SqliteLocalFleetStore be tested here,
+      on a temp file, on an ordinary build agent with no emulator - see
+      tests/FleetGo.Mobile.Tests.
+    -->
+    <!--
+      Logging abstractions only - no provider. The offline layer has genuine operational
+      questions a developer will need answered from a device log ("did the outbox drain?",
+      "why did this conflict?"), and ILogger is how the MAUI head's existing logging
+      configuration (see MauiProgram) reaches code in this project. Abstractions-only keeps
+      this project free of any decision about where logs go.
+    -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
+
+    <PackageReference Include="sqlite-net-pcl" Version="1.9.172" />
+    <PackageReference Include="SQLitePCLRaw.bundle_green" Version="2.1.10" />
+
+    <!--
+      Security pin, not a feature upgrade.
+
+      bundle_green pulls the native SQLite binary in as SQLitePCLRaw.lib.e_sqlite3, and every
+      build of that package up to and including 2.1.11 carries a SQLite older than 3.50.2 -
+      CVE-2025-6965 / GHSA-2m69-gcr7-jv3q, which NuGet audit reports as NU1903 (high).
+
+      The obvious fix - raise bundle_green - does not work: 2.1.11 is the last release of that
+      bundle, and it is inside the advisory range. The fixed native builds shipped in the
+      lib.* packages alone (2.1.12, then 2.1.13), so the supported way to take them is to
+      reference the native package directly. bundle_green declares "2.1.10", which in NuGet
+      means "2.1.10 or newer", so this direct reference satisfies it and wins - no downgrade,
+      no version conflict, and the managed provider is unchanged. The native package is only
+      a binary; there is no API surface here to break.
+
+      This pin covers net10.0 (the test host) and Mac Catalyst. Android needs its own,
+      because bundle_green asks for a different package there - see FleetGo.Mobile.csproj.
+      iOS needs none: on Apple platforms bundle_green uses the system SQLite and never
+      references lib.e_sqlite3 at all.
+
+      Remove this when bundle_green ships a release above 2.1.11 that already depends on a
+      fixed native build.
+    -->
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.13" />
   </ItemGroup>
 
   <ItemGroup>

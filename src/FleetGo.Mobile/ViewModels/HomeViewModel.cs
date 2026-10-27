@@ -2,6 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FleetGo.Mobile.Configuration;
 using FleetGo.Mobile.Core.Biometrics;
+using FleetGo.Mobile.Core.Offline;
 using FleetGo.Mobile.Core.Session;
 using FleetGo.Shared.Contracts;
 using FleetGo.Shared.Http;
@@ -29,6 +30,7 @@ public sealed partial class HomeViewModel : ObservableObject
     private readonly IConnectivity _connectivity;
     private readonly IAuthenticationService _authenticationService;
     private readonly IBiometricUnlockCoordinator _biometricUnlockCoordinator;
+    private readonly IFleetRepository _fleetRepository;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<HomeViewModel> _logger;
 
@@ -37,6 +39,7 @@ public sealed partial class HomeViewModel : ObservableObject
         IConnectivity connectivity,
         IAuthenticationService authenticationService,
         IBiometricUnlockCoordinator biometricUnlockCoordinator,
+        IFleetRepository fleetRepository,
         ApiSettings apiSettings,
         TimeProvider timeProvider,
         ILogger<HomeViewModel> logger)
@@ -45,6 +48,7 @@ public sealed partial class HomeViewModel : ObservableObject
         _connectivity = connectivity;
         _authenticationService = authenticationService;
         _biometricUnlockCoordinator = biometricUnlockCoordinator;
+        _fleetRepository = fleetRepository;
         _timeProvider = timeProvider;
         _logger = logger;
 
@@ -186,6 +190,16 @@ public sealed partial class HomeViewModel : ObservableObject
         IsBiometricUnlockEnabled = false;
 
         await _authenticationService.LogoutAsync();
+
+        // Then the fleet data. Signing out has to leave this device with nothing of this
+        // driver's work on it - not their routes, not their customers' addresses, and not a
+        // queue of their unsent changes for the next person to sync under their own account.
+        // SyncCoordinator also clears on the authentication state change, which covers the
+        // sessions that end without anyone pressing anything (a revoked or expired refresh
+        // token); doing it here as well makes the deliberate sign-out path deterministic
+        // rather than a race with an event handler.
+        await _fleetRepository.ClearAsync();
+
         SignedOut?.Invoke(this, EventArgs.Empty);
     }
 

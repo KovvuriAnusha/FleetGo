@@ -1,4 +1,5 @@
 using FleetGo.Mobile.Core.ViewModels;
+using FleetGo.Shared.Contracts.Fleet;
 
 namespace FleetGo.Mobile.Views;
 
@@ -45,4 +46,25 @@ public partial class StopDetailPage : ContentPage
 
     private async void OnSessionExpired(object? sender, EventArgs e) =>
         await Shell.Current.GoToAsync("//login");
+
+    // The four status actions. Each one hands the matching StopStatusAction to the view
+    // model's command; the view model owns what actually happens, which is why these are one
+    // line each and there is no logic here to get wrong.
+    private void OnMarkArrived(object? sender, EventArgs e) => SetStatus(StopStatus.Arrived);
+
+    private void OnMarkDelivered(object? sender, EventArgs e) => SetStatus(StopStatus.Completed);
+
+    private void OnMarkFailed(object? sender, EventArgs e) => SetStatus(StopStatus.Failed);
+
+    private void OnMarkSkipped(object? sender, EventArgs e) => SetStatus(StopStatus.Skipped);
+
+    private void SetStatus(StopStatus status)
+    {
+        StopStatusAction? action = _viewModel.StatusActions.FirstOrDefault(candidate => candidate.Value == status);
+
+        if (action is not null && _viewModel.SetStatusCommand.CanExecute(action))
+        {
+            _viewModel.SetStatusCommand.Execute(action);
+        }
+    }
 }

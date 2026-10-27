@@ -2,12 +2,19 @@
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:viewmodels="clr-namespace:FleetGo.Mobile.Core.ViewModels;assembly=FleetGo.Mobile.Core"
+             xmlns:views="clr-namespace:FleetGo.Mobile.Views"
              xmlns:fleet="clr-namespace:FleetGo.Shared.Contracts.Fleet;assembly=FleetGo.Shared"
              x:Class="FleetGo.Mobile.Views.StopDetailPage"
              x:DataType="viewmodels:StopDetailViewModel"
              Title="Stop">
 
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" Padding="16,12" RowSpacing="8">
+    <!-- Outer grid exists only to hang the shared sync banner above the page, so the
+         layout below it is untouched from Phase 4B. -->
+    <Grid RowDefinitions="Auto,*" Padding="16,12" RowSpacing="0">
+
+        <views:SyncBannerView Grid.Row="0" BindingContext="{Binding Sync}" />
+
+        <Grid Grid.Row="1" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*" RowSpacing="8">
 
         <!-- Loading -->
         <ActivityIndicator Grid.Row="0"
@@ -65,17 +72,81 @@
                        LineBreakMode="WordWrap"
                        Margin="0,8,0,0"
                        TextColor="{StaticResource Gray600}" />
+
+                <!--
+                    The driver's actions. Wired through Clicked handlers rather than a
+                    templated command binding for the same reason the route list's picker is
+                    (see RouteListPage.xaml.cs): this app drives commands from code-behind
+                    handlers, and four buttons written out plainly are easier to read - and to
+                    get right - than a BindableLayout with a RelativeSource binding back up to
+                    the page's own view model.
+
+                    None of these calls the API. Each one writes the change to the device and
+                    queues it; the notes above say what became of it.
+                -->
+                <Label Text="Update this stop"
+                       FontAttributes="Bold"
+                       Margin="0,12,0,0" />
+
+                <FlexLayout Wrap="Wrap" JustifyContent="Start" AlignItems="Center">
+                    <Button Text="Arrived" Clicked="OnMarkArrived" FontSize="13" Padding="14,6" Margin="0,0,8,8" />
+                    <Button Text="Delivered" Clicked="OnMarkDelivered" FontSize="13" Padding="14,6" Margin="0,0,8,8" />
+                    <Button Text="Failed" Clicked="OnMarkFailed" FontSize="13" Padding="14,6" Margin="0,0,8,8" />
+                    <Button Text="Skipped" Clicked="OnMarkSkipped" FontSize="13" Padding="14,6" Margin="0,0,8,8" />
+                </FlexLayout>
             </VerticalStackLayout>
         </Border>
 
-        <Label Grid.Row="3"
+        <!--
+            What happened to this driver's last change to this stop. Two mutually exclusive
+            shapes, and neither of them is silent:
+
+              - Pending: the change is safely on the device and has not reached the server.
+                Said plainly, because a driver who assumes it is saved and closes the app is
+                making a reasonable assumption the app has to earn.
+              - Conflict or permanent failure: the server's copy moved, or the change was
+                rejected. This one does not clear itself - it offers the only two honest ways
+                out, keep mine or drop mine, and waits for the driver to pick.
+        -->
+        <Border Grid.Row="3"
+                IsVisible="{Binding HasPendingChangeNote}"
+                Padding="12,10"
+                StrokeThickness="1"
+                Stroke="{StaticResource Warning}"
+                BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource Gray950}}">
+            <Border.StrokeShape>
+                <RoundRectangle CornerRadius="10" />
+            </Border.StrokeShape>
+            <Label Text="{Binding PendingChangeNote}" LineBreakMode="WordWrap" />
+        </Border>
+
+        <Border Grid.Row="4"
+                IsVisible="{Binding HasConflict}"
+                Padding="12,10"
+                StrokeThickness="1"
+                Stroke="{StaticResource Danger}"
+                BackgroundColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource Gray950}}">
+            <Border.StrokeShape>
+                <RoundRectangle CornerRadius="10" />
+            </Border.StrokeShape>
+            <VerticalStackLayout Spacing="10">
+                <Label Text="This change couldn't be saved" FontAttributes="Bold" />
+                <Label Text="{Binding ConflictNote}" LineBreakMode="WordWrap" />
+                <HorizontalStackLayout Spacing="8">
+                    <Button Text="Keep mine" Command="{Binding KeepChangeCommand}" FontSize="13" Padding="14,6" />
+                    <Button Text="Discard mine" Command="{Binding DiscardChangeCommand}" FontSize="13" Padding="14,6" />
+                </HorizontalStackLayout>
+            </VerticalStackLayout>
+        </Border>
+
+        <Label Grid.Row="5"
                Text="Packages"
                FontAttributes="Bold"
                IsVisible="{Binding HasStop}"
                Margin="0,8,0,0" />
 
         <!-- Packages -->
-        <Grid Grid.Row="4">
+        <Grid Grid.Row="6">
 
             <VerticalStackLayout IsVisible="{Binding HasNoPackages}"
                                  Spacing="6"
@@ -115,6 +186,7 @@
                     </DataTemplate>
                 </CollectionView.ItemTemplate>
             </CollectionView>
+        </Grid>
         </Grid>
     </Grid>
 

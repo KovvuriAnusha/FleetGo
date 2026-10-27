@@ -130,9 +130,51 @@ public interface IFleetGoApiClient
         string? search = null,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Reads one package at one of the caller's own stops.</summary>
+    /// <exception cref="FleetGoApiException">
+    /// Thrown with status <c>404 Not Found</c> when the package does not exist or sits on
+    /// another driver's route - the API does not distinguish the two.
+    /// </exception>
+    Task<PackageResponse> GetPackageAsync(Guid packageId, CancellationToken cancellationToken = default);
+
     /// <summary>Reads one fleet vehicle. Vehicles are shared fleet data, not per-driver.</summary>
     Task<VehicleResponse> GetVehicleAsync(Guid vehicleId, CancellationToken cancellationToken = default);
 
     /// <summary>Reads one customer. Customers are shared reference data, not per-driver.</summary>
     Task<CustomerResponse> GetCustomerAsync(Guid customerId, CancellationToken cancellationToken = default);
+
+    // ---------------------------------------------------------------------
+    // Mutations (Phase 5). Added because the offline outbox has to have something real
+    // to send: a queued change that no endpoint accepts is not offline support, it is a
+    // queue that never drains.
+    //
+    // All three are full replacements, mirroring the endpoints the API already exposed
+    // in Phase 4A - PUT semantics, every editable field supplied, no partial update and
+    // no concurrency token. That matters to the sync engine: it cannot send "just the
+    // status", so it has to compose the rest of the request from server state it has
+    // just read. See OutboxSender for how that is done, and docs/architecture.md for
+    // the concurrency limitation it leaves behind.
+    // ---------------------------------------------------------------------
+
+    /// <summary>Replaces the editable fields of one of the caller's own routes.</summary>
+    /// <exception cref="FleetGoApiException">
+    /// Thrown with status <c>404 Not Found</c> when the route does not exist or belongs to
+    /// another driver, <c>400 Bad Request</c> when the request fails validation, and
+    /// <c>409 Conflict</c> when the route number is already taken.
+    /// </exception>
+    Task<RouteResponse> UpdateRouteAsync(Guid routeId, UpdateRouteRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Replaces the editable fields of one stop on one of the caller's own routes.</summary>
+    /// <exception cref="FleetGoApiException">
+    /// Thrown with status <c>404 Not Found</c>, <c>400 Bad Request</c>, or <c>409 Conflict</c>
+    /// when another stop already holds the requested sequence number.
+    /// </exception>
+    Task<StopResponse> UpdateStopAsync(Guid stopId, UpdateStopRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Replaces the editable fields of one package at one of the caller's own stops.</summary>
+    /// <exception cref="FleetGoApiException">
+    /// Thrown with status <c>404 Not Found</c>, <c>400 Bad Request</c>, or <c>409 Conflict</c>
+    /// when the tracking number is already taken.
+    /// </exception>
+    Task<PackageResponse> UpdatePackageAsync(Guid packageId, UpdatePackageRequest request, CancellationToken cancellationToken = default);
 }

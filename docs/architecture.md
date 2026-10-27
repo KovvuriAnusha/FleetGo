@@ -554,6 +554,245 @@ forge a fresh partition per request and defeat the limiter entirely, or inventin
 this repository does not have. It is left unconfigured on purpose, and this is the note that says
 so: it must be set up as part of any real deployment behind a proxy.
 
+## Phase 5: offline first
+
+A delivery driver spends their day in the places mobile data is worst: underground car parks,
+loading bays, lifts, rural lanes. Phase 4B's screens each made an HTTP call and showed an error
+when it failed, which is a perfectly reasonable app and a useless one in a basement. Phase 5
+changes one rule and everything else follows from it.
+
+### The rule: screens read from the device, never from the network
+
+`IFleetRepository` is the only thing the driver screens talk to, and every read on it answers
+from SQLite. There is no "loading from the API" path left to fail, because there is no such
+path. The network is touched in exactly two places:
+
+- the `Refresh*` methods, which the sync engine and pull-to-refresh drive, and
+- a one-off hydration when a screen asks for something the cache has never held *and* a network
+  happens to be available - a fresh install opening the route list, say.
+
+The alternative - try the network, fall back to the cache on failure - looks similar and behaves
+differently. It pays a timeout before every screen paints in bad signal, and it makes "how
+current is this?" an implementation detail rather than something the app states. Reading from
+the device makes the answer explicit: `CachedData<T>` carries the timestamp, and the banner says
+it out loud.
+
+### A separate local schema, not the wire contracts stored as-is
+
+`Offline/Models` holds flattened records - `LocalRoute`, `LocalStop`, `LocalPackage` - with the
+columns the screens actually query on and two of their own: `SyncedAtUtc` and
+`HasPendingLocalChange`. `FleetRecordMapper` translates in both directions.
+
+Storing the contracts directly would have been less code and a worse trade: a wire contract
+could then not gain a field without a schema migration, and the cache could not carry a column
+the wire has no reason to know about. Dates are stored as ISO text and statuses as enum *names*
+rather than numbers, so a database opened by a future build stays readable instead of silently
+reinterpreting an enum whose numbering moved.
+
+The view models still expose the wire contracts, because mapping back at the edge costs one
+small file and leaves every Phase 4B page, `DataTemplate` and test working unchanged.
+
+### sqlite-net, not EF Core
+
+The API already owns EF Core against SQL Server. Putting the same stack on the device would mean
+a second `DbContext`, a second migrations story and a substantially larger app payload, to manage
+seven flat tables with no relationships to track. sqlite-net is the library .NET MAUI documents
+for local storage, `CreateTableAsync` is idempotent (so initialisation is safe on every launch),
+and `SQLitePCLRaw.bundle_green` carries a native SQLite build for Android and for the plain
+`net10.0` test host - which is what lets the store be tested with no emulator at all. (On Apple
+platforms "green" binds the system SQLite instead; that is the whole difference between it and
+`bundle_e_sqlite3`.)
+
+The store lives in `FleetGo.Mobile.Core` for that reason, and takes its file path as an injected
+`LocalStoreOptions` rather than reading `FileSystem.AppDataDirectory` itself.
+
+#### A pinned native SQLite, and why the bundle could not be raised instead
+
+Every `SQLitePCLRaw.lib.e_sqlite3*` build up to and including 2.1.11 ships a SQLite older than
+3.50.2 and is covered by CVE-2025-6965 (GHSA-2m69-gcr7-jv3q), which NuGet audit raises as
+**NU1903**. The natural fix - raise `bundle_green` - does not exist: 2.1.11 is that bundle's last
+release, and it is inside the advisory range. The fixed native builds were published in the
+`lib.*` packages on their own (2.1.12, 2.1.13).
+
+So the native packages are referenced directly, at 2.1.13, in the two places the graph actually
+uses them: `lib.e_sqlite3` from `FleetGo.Mobile.Core` (test host and Mac Catalyst) and
+`lib.e_sqlite3.android` from `FleetGo.Mobile` (Android). `bundle_green`'s own dependency is a
+minimum, not an exact version, so a direct reference satisfies it and wins - nothing is
+downgraded and no managed code changes. iOS needs no pin, because `bundle_green` uses the system
+SQLite there and never references the package at all.
+
+The alternative - switching to the actively maintained `bundle_e_sqlite3` - was rejected:
+`sqlite-net-pcl` depends on `bundle_green` by name, so the switch would not remove it from the
+graph, and having both bundles present means two copies of `SQLitePCLRaw.batteries_v2`. The pin
+comes out when `bundle_green` next ships.
+
+### The outbox: one durable queue, ordered by an autoincrementing sequence
+
+A change the driver makes is written to the cache immediately and queued in `outbox_operations`.
+The primary key is an autoincrementing integer, and that is what the queue is ordered by - not
+`CreatedAtUtc`. A timestamp ties when two changes land in the same millisecond, and a device
+whose clock is adjusted mid-shift can reorder its own history. A sequence number cannot do
+either, and it survives a restart.
+
+**Only status changes are queued.** The API's update endpoints can also change a stop's
+customer, its sequence and its delivery notes, but those are dispatch decisions rather than
+driver ones. Queueing them would be inventing a workflow the product does not have. Phase 5
+adds no speculative endpoint and no speculative offline action: what is offline-capable is what
+the API already supports and a driver already does.
+
+**A second change to the same record replaces the first.** A driver who taps *Arrived* and then
+*Delivered* before any signal returns owes the server one update, not two. Coalescing keeps the
+original baseline - the state the server was in before this device touched anything - because
+that is the only value the conflict check can meaningfully compare against.
+
+**The queue is bounded.** 500 pending operations, after which a change is refused with an
+explanation rather than accepted into a pile nobody will ever reconcile. Completed operations
+are pruned after 24 hours; operations in conflict or permanently failed are never pruned on age,
+because they are waiting for a person.
+
+### Conflict handling, given an API with no concurrency control
+
+This is the part of Phase 5 with the least attractive answer, and the answer is honest rather
+than clever.
+
+The API's update endpoints are full replacements. There is no PATCH, no ETag, no `If-Match` and
+no version column. So there is no way to say "change the status, and only if the record still
+looks like this". What the sync engine does instead, for each queued change:
+
+1. `GET` the record.
+2. Compare the fields this app is *not* changing, plus the server's own status and
+   `UpdatedAtUtc`, against the snapshot captured when the change was queued.
+3. If they differ, or if the server answers `409`, record a **conflict**: the operation is
+   parked, the server's value is written back into the cache so the screen stops showing
+   something untrue, and the driver is offered the only two honest ways out - *keep mine*
+   (re-queue against the server's current state) or *discard mine*.
+
+   *Keep mine* queues the replacement **before** discarding the operation that conflicted, and
+   that ordering is a guarantee rather than an accident. The queue can refuse - an expired
+   session (which arrives from the same sync run as the conflict), another driver signing in,
+   or the pending ceiling - and discarding first would leave the driver with no record of the
+   status they had just chosen to keep. Queueing first is safe because a conflicted operation
+   is invisible to the outbox's de-duplication, so the replacement is always a new row, and it
+   costs nothing because the ceiling counts pending work only.
+4. Otherwise, compose the full replacement from the record just read plus the one changed
+   status, and `PUT` it.
+
+`UpdatedAtUtc` is used as a change detector, not invented as a version token: it is a field the
+server already returns. That distinction matters, because **the gap between step 1 and step 4 is
+real** - another writer can still get in, and their change would be overwritten. Closing it
+needs the API to grow a concurrency token (a `rowversion` column, surfaced as an ETag and
+honoured on `If-Match`), which is server work Phase 5 deliberately does not do rather than
+faking a protocol the server does not implement.
+
+What Phase 5 does guarantee is that **a conflict never disappears silently**. It is never
+auto-retried, never merged on a guess, never resolved last-write-wins. It persists in the
+database, it is counted in the banner, and it is shown on the stop it belongs to until a person
+decides.
+
+### Retry: exponential backoff with jitter, and a budget
+
+Failures are classified before they are retried, because most of them should not be:
+
+| Outcome | Treatment |
+|---|---|
+| Transport failure, timeout, `5xx`, `408`, `429` | Retry with backoff |
+| `409`, or server state that has moved | Conflict - never auto-retried |
+| `400`, `422`, `403`, `404` | Permanent failure - retrying is a slower way of never succeeding |
+| `401` | Stop the whole run; the queue is untouched |
+
+Retries wait 5s, 10s, 20s ... capped at five minutes, with equal jitter (half the delay fixed,
+half random) so a fleet of devices leaving the same underpass does not retry in the same
+millisecond. After eight attempts the operation is marked failed and surfaced. **That budget is
+the point**: an unbounded backoff is an infinite retry loop with better manners.
+
+### Authentication is not something the sync engine works around
+
+Queued mutations go out through the same authenticated typed client as everything else. The
+outbox stores fleet instructions - never a token, never a credential - and `SecureStorage`
+remains the only place authentication secrets live. Nothing here refreshes or fabricates a token
+while offline: a `401` that survives the existing proactive refresh means the session is
+genuinely over, so the run stops, the queue is left exactly as it was, and the driver signs in
+again before anything is sent. Stopping at the first `401` also avoids burning every other
+operation's retry budget on a problem none of them caused.
+
+### Cross-driver isolation on a shared device
+
+`sync_metadata.OwnerDriverId` records which driver the cache belongs to, and
+`EnsureOwnedByAsync` wipes everything - records *and* queue - if a **different** one signs in. A
+driver must not inherit another's stops, and must certainly not have another driver's queued
+work sent under their own token.
+
+The emphasis on *different* is load-bearing, and getting it wrong cost real data. An unowned
+cache - no `OwnerDriverId` recorded at all - is **adopted, not wiped**. "Nobody is recorded as
+the owner" is not "this is somebody else's data": it is the state of a fresh install, of a
+device just signed out of, and, critically, of any cache filled before the driver profile was
+known. The repository's refresh methods are public and do exactly that, because they can run
+before `GET /auth/me` has returned. Clearing on first bind therefore destroyed records and
+queued changes that provably belonged to nobody else - worst case, a driver who worked a
+morning offline lost every unsent delivery the instant their profile came back. The isolation
+rule is "never serve or send another driver's data", and clearing only on a genuine owner
+change satisfies it.
+
+Sign-out clears the database outright. It is done in two places on purpose: `HomeViewModel`
+awaits it on the deliberate sign-out path so it is deterministic, and `SyncCoordinator` also
+clears on the authentication state change, which is what covers the sessions that end without
+anyone pressing anything - a revoked or expired refresh token.
+
+One case is worth stating explicitly. When the app resumes with no network, the tokens restore
+from `SecureStorage` but `GET /auth/me` cannot run, so the driver id is unknown. The cache is
+served as-is rather than withheld, and that is safe because signing in requires the network: an
+offline session is necessarily the same session that was last online. Ownership is re-checked
+the moment the profile loads - and, per the rule above, that first check adopts the work done
+in the meantime rather than throwing it away.
+
+### Sync triggers, and what "background" honestly means here
+
+`SyncCoordinator` owns the *when*: a session starting, the network coming back, the app
+returning to the foreground, a five-minute heartbeat, and a nudge from whoever just queued a
+change. `SyncService` owns the *how*, which is what makes it testable without any timers.
+
+Push runs before pull. The other order would fetch the server's copy of a record the device is
+about to change, overwrite the driver's unsent value with it, and then send the change anyway -
+a visible flicker backwards for no gain.
+
+**This is not OS-level background execution.** Android's WorkManager and iOS's BGTaskScheduler
+can run work while the app is closed, and a delivery app would eventually want that. Both need
+platform scheduling code, per-platform entitlements and a story about what a driver is told when
+a queued change fails with nobody watching. Phase 5 stops short and says so, rather than
+shipping a timer and calling it background sync. Everything here runs while the app is alive; a
+change left unsent is sent the next time the app is opened, which is the guarantee the UI
+actually makes.
+
+### What a sync pulls, and why it is a window rather than everything
+
+The API has no delta endpoint - no `?modifiedSince=`, no change feed - so a sync is a full
+re-read of whatever it covers. It covers the 60 newest routes, plus today's routes in full
+(stops, packages, customers, capped at three routes and twenty-five stops) so a driver who
+loses signal after leaving the depot still has their day. The caps exist because there is no
+batch endpoint either: each stop costs its own requests, and an uncapped prefetch on a busy day
+is a request storm on data the driver pays for.
+
+Both limits are the API's to lift. A delta parameter would make the pull incremental; a
+"route with stops and packages" endpoint would make the prefetch one call. Neither is faked
+client-side.
+
+A consequence worth knowing: the route list pages over what the device holds, so `TotalCount`
+is how many routes have been synced, not how many exist on the server. The banner says when
+that was last refreshed.
+
+### Honest UI state
+
+`SyncStatusViewModel` is the one place the app makes a claim about how current its data is, and
+it is shared by every fleet screen so they cannot disagree. There is no optimistic wording in
+it: "waiting to send" is never rendered as "saved", a conflict says outright that a person has
+to decide, and the banner disappears only when the device is online, the queue is empty and a
+sync has actually happened. A stop with an unsent change says so next to the stop, because that
+is a fact about the stop rather than about the app.
+
+The sync engine raises its events from background threads, so `IUiDispatcher` marshals them -
+an interface rather than a direct `MainThread` call, because `FleetGo.Mobile.Core` has no MAUI
+dependency by design and tests need the callback to run inline.
+
 ## Testing
 
 `FleetGo.API.Tests` boots the real host in memory with `WebApplicationFactory`, so routing, DI,
@@ -573,6 +812,19 @@ on handlers would miss.
 `FleetGo.Mobile.Tests` targets plain `net10.0` and covers the shared client, serialisation, and
 - since Phase 2 - `FleetGo.Mobile.Core`'s view models and session logic with a stubbed
 `HttpMessageHandler`, so it runs in CI without an emulator.
+
+Phase 5's tests run against **real SQLite on a real file**, not a hand-written fake of the store.
+The things most likely to be wrong in that layer are SQL, schema and transaction behaviour -
+exactly what a fake would paper over - and `bundle_green` runs on the test host as happily as on
+a phone. A file rather than `:memory:` because one of the properties worth proving is that the
+queue survives the process. The view model tests use a fake repository instead, because what
+they are about is the view model; whether SQLite got the SQL right is a separate question,
+answered separately.
+
+`OfflineDependencyGraphTests` builds the real offline registrations for the same reason
+`AuthenticationDependencyGraphTests` exists: the sync graph has a shape that is easy to get
+subtly wrong - the service and the status provider must be one object, so must the coordinator
+and the trigger - and on a device that failure arrives as a blank screen at launch.
 
 ### Test runner: Microsoft.Testing.Platform, not VSTest
 
@@ -626,6 +878,13 @@ The repository is public, so:
   docs/development-setup.md.
 - `appsettings.*.Local.json`, `.env`, `*.keystore`, `*.p12` and friends are in `.gitignore`.
 - Payment work uses sandbox credentials only, supplied at runtime, never checked in.
+- The on-device database (Phase 5) holds fleet data only - routes, stops, packages, customer
+  addresses, and the queue of unsent changes. **No token, refresh token, password or other
+  authentication secret is ever written to SQLite**; `SecureStorage` remains the only place
+  those live. Logging from the offline layer is limited to identifiers, status names and HTTP
+  status codes - never delivery notes, customer details or anything from the session. The cache
+  is bound to one driver and wiped when that changes or on sign-out (see "Phase 5: offline
+  first" above).
 - Passwords are never stored or logged in plaintext (`PasswordHasher<TUser>`); refresh tokens are
   never stored in plaintext either (SHA-256 hash only) - see "Phase 2: authentication" above. As of
   Phase 3, one-time codes follow the same rule - only a salted HMAC hash is ever stored, and the

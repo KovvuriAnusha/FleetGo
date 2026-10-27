@@ -2,6 +2,7 @@
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:viewmodels="clr-namespace:FleetGo.Mobile.Core.ViewModels;assembly=FleetGo.Mobile.Core"
+             xmlns:views="clr-namespace:FleetGo.Mobile.Views"
              xmlns:fleet="clr-namespace:FleetGo.Shared.Contracts.Fleet;assembly=FleetGo.Shared"
              x:Class="FleetGo.Mobile.Views.DashboardPage"
              x:DataType="viewmodels:DashboardViewModel"
@@ -20,6 +21,8 @@
                            IsVisible="{Binding HasDriverCode}"
                            TextColor="{StaticResource Gray500}" />
                 </VerticalStackLayout>
+
+                <views:SyncBannerView BindingContext="{Binding Sync}" />
 
                 <!-- Loading -->
                 <ActivityIndicator IsRunning="{Binding IsBusy}"

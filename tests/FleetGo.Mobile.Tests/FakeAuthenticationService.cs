@@ -60,7 +60,34 @@ internal sealed class FakeAuthenticationService : IAuthenticationService
 
     public event EventHandler? AuthenticationStateChanged;
 
-    public bool IsAuthenticated { get; private set; }
+    public bool IsAuthenticated { get; set; }
+
+    /// <summary>
+    /// Puts this fake into the "signed in" state the offline layer expects. The repository
+    /// refuses to read or queue anything without it, which is the point - see
+    /// <c>FleetRepository.EnsureReadyAsync</c>.
+    /// </summary>
+    public void SignIn(Guid? driverId = null)
+    {
+        CurrentUser = new CurrentUserResponse(
+            UserId: Guid.NewGuid(),
+            Email: "driver@example.test",
+            FirstName: "Test",
+            LastName: "Driver",
+            DriverId: driverId ?? Guid.NewGuid(),
+            DriverCode: "D-1001");
+
+        IsAuthenticated = true;
+        AuthenticationStateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>A signed-in session whose profile has not loaded - the app resuming with no network.</summary>
+    public void SignInWithoutProfile()
+    {
+        CurrentUser = null;
+        IsAuthenticated = true;
+        AuthenticationStateChanged?.Invoke(this, EventArgs.Empty);
+    }
 
     /// <summary>Settable so a test can stand up a signed-in profile - DashboardViewModel reads this to greet the driver.</summary>
     public CurrentUserResponse? CurrentUser { get; set; }
